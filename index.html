@@ -112,16 +112,24 @@
   </section>
 
   <!-- END SCREEN -->
-  <section id="end-screen" class="hidden">
-    <div class="panel" style="max-width:800px; margin: 20vh auto 0;">
-      <h2 id="end-title">Ende</h2>
-      <p id="end-summary" class="muted"></p>
-      <div style="margin-top:12px;">
-        <button id="btn-to-start" class="primary">Zurück zum Start</button>
-      </div>
+<section id="end-screen" class="hidden">
+  <div class="panel" style="max-width:900px; margin: 10vh auto 0;">
+    <h2 id="end-title">Ende</h2>
+    <p id="end-summary" class="muted"></p>
+
+    <div class="sep"></div>
+
+    <h3>Reflexionsbericht</h3>
+    <div id="end-report" class="muted" style="white-space:pre-wrap; line-height:1.35;"></div>
+
+    <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
+      <button id="btn-continue" class="primary">Weiter im Sandbox-Modus</button>
+      <button id="btn-reseed">Neu starten (gleicher Seed)</button>
+      <button id="btn-download">Run exportieren (JSON)</button>
+      <button id="btn-to-start">Zurück zum Start</button>
     </div>
-  </section>
-</div>
+  </div>
+</section>
 
 <!-- JS laden -->
 <script src="game.js"></script>
