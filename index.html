@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Closure Hub — Aufarbeitung</title>
+  <!-- CSS laden -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+
+  <!-- START SCREEN -->
+  <section id="start-screen">
+    <h1>Closure Hub — Aufarbeitung</h1>
+    <div class="row cols-2">
+      <div class="panel">
+        <h3>Profil (anonym)</h3>
+        <div class="inline" style="gap:12px; flex-wrap: wrap;">
+          <div><span class="muted">Kontext:</span> <span class="pill">Beziehungs-Aufarbeitung</span></div>
+          <div><span class="muted">Modus:</span> <span class="pill">Selbstreflexion</span></div>
+        </div>
+        <div class="sep"></div>
+        <div class="inline" style="gap:10px; flex-wrap:wrap;">
+          <div class="inline">
+            <span class="muted">Geschlecht:</span> <span id="gender-label">Divers</span>
+            <button id="gender-toggle">Toggle</button>
+          </div>
+          <div class="inline">
+            <span class="muted">Alter:</span>
+            <button id="age-minus">−</button>
+            <span id="age-val" style="display:inline-block; width:48px; text-align:center;">18</span>
+            <button id="age-plus">+</button>
+          </div>
+          <div class="inline">
+            <span class="muted">Seed (optional):</span>
+            <input id="seed-input" placeholder="z. B. 12345" style="min-width:180px;" />
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>Attribute – Punkte übrig: <span id="pts-left">10</span></h3>
+        <div class="stat-row">
+          <div>Selbstbild <span class="muted">(Appearance)</span></div>
+          <button data-stat="Appearance" data-delta="-1">−</button>
+          <div id="stat-Appearance" style="text-align:center;">2</div>
+          <button data-stat="Appearance" data-delta="1">+</button>
+        </div>
+        <div class="stat-row">
+          <div>Körper/Ruhe <span class="muted">(Physique)</span></div>
+          <button data-stat="Physique" data-delta="-1">−</button>
+          <div id="stat-Physique" style="text-align:center;">2</div>
+          <button data-stat="Physique" data-delta="1">+</button>
+        </div>
+        <div class="stat-row">
+          <div>Klarheit <span class="muted">(Intellect)</span></div>
+          <button data-stat="Intellect" data-delta="-1">−</button>
+          <div id="stat-Intellect" style="text-align:center;">2</div>
+          <button data-stat="Intellect" data-delta="1">+</button>
+        </div>
+        <div class="stat-row">
+          <div>Glück <span class="muted">(Luck)</span></div>
+          <button data-stat="Luck" data-delta="-1">−</button>
+          <div id="stat-Luck" style="text-align:center;">2</div>
+          <button data-stat="Luck" data-delta="1">+</button>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top:10px;">
+      <button id="confirm-btn" class="primary" disabled>Start</button>
+      <span class="muted">Verteile alle Punkte, um zu starten.</span>
+    </div>
+
+    <p class="muted" style="margin-top:10px; font-size:12px;">
+      Hinweis: Dieses Spiel ist <strong>Selbstreflexion</strong>, keine Therapie. Inhalte sind anonym & allgemein.
+    </p>
+  </section>
+
+  <!-- GAME SCREEN -->
+  <section id="game-screen" class="hidden">
+    <div class="header">
+      <h2>Closure Hub</h2>
+      <div class="inline">
+        <button id="btn-focus">Fokusmodus: AUS</button>
+        <button id="btn-refresh">Optionen aktualisieren</button>
+        <button id="btn-exit">Freiwillig beenden</button>
+        <button id="btn-restart">Neustart</button>
+      </div>
+    </div>
+
+    <div class="row cols-3">
+      <div class="panel">
+        <h3>Optionen <span class="muted">(safe / medium / hard)</span></h3>
+        <div id="options"></div>
+      </div>
+
+      <div class="panel">
+        <h3>Ereignis-Log</h3>
+        <div class="log" id="log"></div>
+      </div>
+
+      <div class="panel">
+        <h3>Status & Fortschritt</h3>
+        <div id="status"></div>
+        <div class="sep"></div>
+        <h3>Cooldowns</h3>
+        <div id="cooldowns"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- END SCREEN -->
+  <section id="end-screen" class="hidden">
+    <div class="panel" style="max-width:800px; margin: 20vh auto 0;">
+      <h2 id="end-title">Ende</h2>
+      <p id="end-summary" class="muted"></p>
+      <div style="margin-top:12px;">
+        <button id="btn-to-start" class="primary">Zurück zum Start</button>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- JS laden -->
+<script src="game.js"></script>
+</body>
+</html>
