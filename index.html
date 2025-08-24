@@ -161,8 +161,27 @@
   </div>
 </div>
 
-<!-- JS laden: Boot zuerst, dann Game -->
-<script src="boot.js"></script>
-<script src="game.js"></script>
+<!-- JS laden: Boot zuerst, dann Game; beide mit 'defer' (Reihenfolge bleibt erhalten) -->
+<script src="boot.js" defer></script>
+<script src="game.js" defer></script>
+
+<!-- Mini-Preflight: zeigt Hinweis, falls boot.js NICHT geladen wurde -->
+<script>
+  window.addEventListener('DOMContentLoaded', function(){
+    setTimeout(function(){
+      if (!window.CH || !window.CH.ui) {
+        var w = document.createElement('div');
+        w.style.cssText='position:fixed;inset:0;background:rgba(10,13,10,.92);z-index:99998;padding:16px';
+        w.innerHTML = '<div class="panel" style="max-width:900px;margin:10vh auto">'+
+          '<h3>Hinweis: Debug/Diagnostics nicht geladen</h3><div class="sep"></div>'+
+          '<p class="muted">Die Datei <code>boot.js</code> wurde nicht gefunden oder blockiert. '+
+          'Prüfe die Pfadangabe und lade die Seite über HTTP/HTTPS (nicht <code>file://</code>).</p>'+
+          '<div style="margin-top:8px"><button id="__pf_close" class="primary">OK</button></div></div>';
+        document.body.appendChild(w);
+        w.querySelector('#__pf_close').onclick = function(){ w.remove(); };
+      }
+    }, 0);
+  });
+</script>
 </body>
 </html>
