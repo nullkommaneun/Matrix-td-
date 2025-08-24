@@ -4,7 +4,6 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Closure Hub — Aufarbeitung</title>
-  <!-- CSS laden -->
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -84,6 +83,7 @@
         <button id="btn-refresh">Optionen aktualisieren</button>
         <button id="btn-exit">Freiwillig beenden</button>
         <button id="btn-restart">Neustart</button>
+        <button id="btn-debug">Debug</button>
       </div>
     </div>
 
@@ -123,13 +123,46 @@
         <button id="btn-continue" class="primary">Weiter im Sandbox-Modus</button>
         <button id="btn-reseed">Neu starten (gleicher Seed)</button>
         <button id="btn-download">Run exportieren (JSON)</button>
+        <button id="btn-mdc">Maschinencode (Debug)</button>
         <button id="btn-to-start">Zurück zum Start</button>
       </div>
     </div>
   </section>
 </div>
 
-<!-- JS laden -->
+<!-- Debug-Panel (versteckt) -->
+<div id="debug-panel" class="debug-panel hidden">
+  <div class="panel">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <h3>Diagnose & Debug</h3>
+      <button id="debug-close">Schließen</button>
+    </div>
+    <div class="sep"></div>
+
+    <div class="row cols-2">
+      <div>
+        <h4>Health-Check</h4>
+        <div id="debug-health" class="log" style="height:240px;"></div>
+      </div>
+      <div>
+        <h4>Logs</h4>
+        <div id="debug-logs" class="log" style="height:240px;"></div>
+      </div>
+    </div>
+
+    <div class="sep"></div>
+    <h4>Maschinencode</h4>
+    <textarea id="debug-code" rows="6" style="width:100%;"></textarea>
+    <div style="margin-top:6px; display:flex; gap:8px; flex-wrap:wrap;">
+      <button id="debug-run" class="primary">Generieren</button>
+      <button id="debug-copy">Kopieren</button>
+      <span class="muted">→ Code kopieren und zur Auswertung bereitstellen.</span>
+    </div>
+  </div>
+</div>
+
+<!-- JS laden: Boot zuerst, dann Game -->
+<script src="boot.js"></script>
 <script src="game.js"></script>
 </body>
 </html>

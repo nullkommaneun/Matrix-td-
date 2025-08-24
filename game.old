@@ -1,14 +1,7 @@
 /* ============================================================================
    Closure Hub — Aufarbeitung (game.js)
-   Rolle/Dateizweck:
-     - Spielengine + UI für den Modus „Aufarbeitung“
-     - Aftercare-Pack (sanfte Karten)
-     - Endbildschirm mit Reflexionsbericht, Sandbox-Weiter, Re-Seed, Export
-     - *Sicherheit & Debug*:
-         · Integration mit CH.loader (Health-Checks) & CH.logger (Logs)
-         · Fehlerdiagnose via CH.diagnostics (Maschinencode/MDC)
-         · Event-Handler mit CH.safeWrap ummantelt
-   Abhängigkeit: boot.js (liefert CH.*)
+   - Aftercare-Pack (sanfte Karten)
+   - Endbildschirm mit Reflexionsbericht, Sandbox-Weiter, Re-Seed, Export
    ============================================================================ */
 
 /* ---------- Seeded RNG (xmur3 + sfc32) ---------- */
@@ -45,7 +38,7 @@ function makeRngFromSeed(seedStr) {
 /* ---------- Enums/Types ---------- */
 const Stat = { Appearance: "Appearance", Physique: "Physique", Intellect: "Intellect", Luck: "Luck" };
 const Perk = { Networker: "Networker", Workhorse: "Workhorse", Analytical: "Analytical", Stoic: "Stoic", Creative: "Creative", LuckyBreak: "LuckyBreak" };
-const Path = { Ausbildung: "Ausbildung", Universitaet: "Universitaet", Freelancer: "Freelancer" };
+const Path = { Ausbildung: "Ausbildung", Universitaet: "Universitaet", Freelancer: "Freelancer" }; // technisch beibehalten
 const Risk = { Safe: "Safe", Medium: "Medium", Hard: "Hard" };
 
 /* ---------- Small Utils ---------- */
@@ -53,8 +46,7 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const signStr = (n) => (n >= 0 ? "+" + n : "" + n);
 const d10 = (rng) => 1 + Math.floor(rng() * 10);
 const el = (id) => document.getElementById(id);
-// WICHTIG: Event-Handler werden defensiv via CH.safeWrap registriert
-const on = (target, type, handler) => target && target.addEventListener(type, window.CH ? CH.safeWrap(handler, target, `${type}#${target.id || target.tagName}`) : handler);
+const on = (target, type, handler) => target.addEventListener(type, handler);
 const setHTML = (node, html) => { node.innerHTML = html; };
 function prependTextLine(node, line) {
   const div = document.createElement("div");
@@ -209,7 +201,7 @@ function makeMilestones() {
       id: "triggers_mastered", name: "Trigger-Kompetenz", desc: "Trigger-Karte + Grenzen-Script.",
       path: Path.Ausbildung, isPinnacle: false,
       requirements: (s) => (s.successTags.get("skills") || 0) >= 2,
-      rewards: (s) => s.money += 50
+      rewards: (s) => s.money += 50 // symbolische „Hoffnung“
     },
     {
       id: "new_pillars", name: "Neue Pfeiler", desc: "Routinen etabliert, Zukunftsbild skizziert.",
@@ -225,10 +217,10 @@ function createState(meta, stats, perks, path, seedStr) {
   const rng = makeRngFromSeed(seedStr);
   return {
     meta, stats, perks, path, rng,
-    seed: seedStr,
-    sandbox: false,
-    noEnds: false,
-    energy: 100, stress: 0, money: 0, xp: 0,
+    seed: seedStr,          // für Re-Seed-Neustart
+    sandbox: false,         // Sandbox-Modus aktiv?
+    noEnds: false,          // Enden/Milestones unterdrücken (Sandbox)
+    energy: 100, stress: 0, money: 0, xp: 0, // money == Hoffnung
     cooldowns: new Map(),
     sinceSeen: new Map(),
     successTags: new Map(),
@@ -242,9 +234,9 @@ function createState(meta, stats, perks, path, seedStr) {
 function pickOptions(state, pool) {
   const risks = [Risk.Safe, Risk.Medium, Risk.Hard];
   const targets = new Map([
-    [Risk.Safe, 6 + Math.floor(state.rng() * 2)],
-    [Risk.Medium, 8 + Math.floor(state.rng() * 2)],
-    [Risk.Hard, 10 + Math.floor(state.rng() * 2)]
+    [Risk.Safe, 6 + Math.floor(state.rng() * 2)],   // 6..7
+    [Risk.Medium, 8 + Math.floor(state.rng() * 2)], // 8..9
+    [Risk.Hard, 10 + Math.floor(state.rng() * 2)]   // 10..11
   ]);
   const out = [];
   const X_NEU = 5;
@@ -266,10 +258,14 @@ function pickOptions(state, pool) {
     const weights = candidates.map(def => {
       const fitGrad = 1 - (Math.abs(def.baseDC - target) / 5);
       let w = Math.max(0, Math.min(1, fitGrad));
+      // Bedürfnislage
       if (state.stress >= 70 && (def.tags.includes("rest") || def.tags.includes("aftercare"))) w *= 1.6;
       if (state.energy <= 30 && def.energyCost >= 25) w *= 0.6;
+      // Fortschritts-Priorisierung
       if (def.tags.includes("milestone-setup")) w *= 1.25;
+      // Sandbox: Aftercare bevorzugen
       if (state.sandbox && def.tags.includes("aftercare")) w *= 1.5;
+      // Neuheit
       const age = state.sinceSeen.get(def.id) ?? (X_NEU + 1);
       w *= (age > X_NEU) ? 1.2 : 0.8;
       return w;
@@ -305,6 +301,7 @@ function pickOptions(state, pool) {
 function applyAction(state, option) {
   const def = option.def;
 
+  // Sicherheitsnetz
   const last = state.history.slice(-20);
   const succRate = last.length ? (last.filter(x => x).length / last.length) : 1.0;
   const safety = (succRate < 0.40) ? 1 : 0;
@@ -317,16 +314,19 @@ function applyAction(state, option) {
   const dcEff = Math.max(0, def.baseDC - safety);
   const success = total >= dcEff;
 
+  // Ressourcen + Perks
   const [stressAdj, hopeAdj, xpAdj] = applyPerkEconomy(state.perks, def, def.stressDelta, def.moneyDelta, def.xpGain);
 
-  state.energy = clamp(state.energy - def.energyCost, 0, 100);
+  state.energy = clamp(state.energy - def.energyCost, 0, 100); // negative Kosten geben Energie
   state.stress = clamp(state.stress + stressAdj, 0, 100);
-  state.money += hopeAdj;
+  state.money += hopeAdj; // „Hoffnung“
   state.xp += xpAdj;
 
+  // Cooldowns (aktionsbasiert)
   if (def.cooldown && def.cooldown > 0) state.cooldowns.set(def.id, def.cooldown);
   for (const [k, v] of [...state.cooldowns.entries()]) state.cooldowns.set(k, Math.max(0, v - 1));
 
+  // Tags nur bei Erfolg
   if (success) {
     def.tags.forEach(tag => state.successTags.set(tag, (state.successTags.get(tag) || 0) + 1));
     def.onSuccess(state);
@@ -334,6 +334,7 @@ function applyAction(state, option) {
     def.onFailure(state);
   }
 
+  // Endbedingungen (Sandbox unterdrückt Enden)
   if (!state.noEnds) {
     if (state.stress >= 100) {
       endGame(state, "Rückfall/Überlastung", "Stress bei 100. Hinweis: Mehr Erholung und klare Grenzen einplanen.");
@@ -341,20 +342,14 @@ function applyAction(state, option) {
       checkMilestones(state);
     }
   } else {
+    // Sandbox: Stress nicht über 99 steigen lassen
     state.stress = Math.min(state.stress, 99);
   }
 
   state.history.push(success);
   if (state.history.length > 50) state.history.shift();
 
-  if (window.CH) {
-    const prob = successProbability(state, def, def.baseDC);
-    CH.logger.info(`Aktion ${def.id} → ${success ? 'Erfolg' : 'Fail'}`, {
-      roll, luckShift: ls, baseStat, statBonus, dc: def.baseDC, dcEff,
-      energyCost: def.energyCost, stressAdj, hopeAdj, xpAdj, prob
-    });
-  }
-
+  // Logzeile
   const prob = successProbability(state, def, def.baseDC);
   const parts = [];
   parts.push(`Aktion: ${def.name} [${String(option.risk).toLowerCase()}]`);
@@ -368,7 +363,7 @@ function applyAction(state, option) {
 }
 
 function checkMilestones(state) {
-  if (state.noEnds) return;
+  if (state.noEnds) return; // Sandbox: keine neuen Meilensteine/Enden
   const ms = makeMilestones().filter(m => m.path === state.path && !state.milestonesAchieved.has(m.id));
   for (const m of ms) {
     if (m.requirements(state)) {
@@ -451,8 +446,6 @@ function downloadText(filename, text) {
 }
 
 function showEnd() {
-  const btnMdc = el("btn-mdc");
-
   elGame.classList.add("hidden");
   elEnd.classList.remove("hidden");
   elEndTitle.textContent = GAME.endTitle;
@@ -464,7 +457,8 @@ function showEnd() {
   const btnReseed = el("btn-reseed");
   const btnDl = el("btn-download");
 
-  if (btnCont) btnCont.onclick = window.CH ? CH.safeWrap(() => {
+  if (btnCont) btnCont.onclick = () => {
+    // Sandbox: weiter spielen, Enden aus
     GAME.sandbox = true;
     GAME.noEnds = true;
     GAME.ended = false;
@@ -473,24 +467,17 @@ function showEnd() {
     elEnd.classList.add("hidden");
     elGame.classList.remove("hidden");
     refreshOptions(); renderStatus(); renderCooldowns();
-  }, null, 'end-continue') : () => {};
-
-  if (btnReseed) btnReseed.onclick = window.CH ? CH.safeWrap(() => {
+  };
+  if (btnReseed) btnReseed.onclick = () => {
     const same = GAME.seed || "" + Date.now();
     toStart();
     elSeedInput.value = same;
-  }, null, 'end-reseed') : () => {};
-
-  if (btnDl) btnDl.onclick = window.CH ? CH.safeWrap(() => {
+  };
+  if (btnDl) btnDl.onclick = () => {
     const fname = `closure-hub_run_${(GAME.seed || 'seed')}.json`;
     downloadText(fname, sessionAsJSON(GAME));
-  }, null, 'end-dl') : () => {};
-
-  if (btnMdc) btnMdc.onclick = window.CH ? CH.safeWrap(() => {
-    CH.ui.open();
-  }, null, 'end-mdc') : () => {};
-
-  if (elToStart) on(elToStart, "click", () => toStart());
+  };
+  if (elToStart) elToStart.onclick = () => toStart();
 }
 
 /* ---------- UI Binding ---------- */
@@ -516,7 +503,6 @@ const elRefresh = el("btn-refresh");
 const elExit = el("btn-exit");
 const elRestart = el("btn-restart");
 const elFocus = el("btn-focus");
-const elDebugOpen = el("btn-debug");
 
 const elEndTitle = el("end-title");
 const elEndSummary = el("end-summary");
@@ -532,23 +518,6 @@ const pre = {
 
 let GAME = null;
 const ACTIONS = makeActions();
-
-// --- Health-Checks (DOM & Actions) ------------------------------------------
-if (window.CH) {
-  CH.loader.registerModule('game', '0.9.0');
-  try {
-    CH.loader.checkDom([
-      "start-screen","game-screen","end-screen","gender-label","gender-toggle","age-val",
-      "age-minus","age-plus","pts-left","seed-input","confirm-btn","options","log",
-      "status","cooldowns","btn-refresh","btn-exit","btn-restart","btn-focus","btn-debug",
-      "end-title","end-summary","btn-to-start","btn-mdc"
-    ]);
-    CH.loader.checkActions(ACTIONS, Stat);
-    CH.logger.info('Health-Check game.js OK.');
-  } catch (e) {
-    CH.diagnostics.recordError(e, 'health-check(game)');
-  }
-}
 
 function updateStartUI() {
   elGender.textContent = pre.gender;
@@ -572,7 +541,6 @@ function toStart() {
   setHTML(elLog, "");
   document.body.classList.remove("focus");
   if (elFocus) elFocus.textContent = "Fokusmodus: AUS";
-  if (window.CH) CH.logger.info('Zurück zum Start.');
 }
 
 function startGame() {
@@ -580,20 +548,10 @@ function startGame() {
   GAME = createState(
     { gender: pre.gender, age: pre.age, background: "Neutral" },
     { ...pre.stats },
-    new Set(),
-    Path.Ausbildung,
+    new Set(),                // Start ohne Perks
+    Path.Ausbildung,          // Path technisch beibehalten
     seed
   );
-  if (window.CH) {
-    CH.logger.info('Spielstart', { seed, stats: GAME.stats });
-    CH.diagnostics.setStateSupplier(() => ({
-      seed: GAME.seed,
-      resources: { energy: GAME.energy, stress: GAME.stress, hope: GAME.money, xp: GAME.xp },
-      ended: GAME.ended, milestones: [...GAME.milestonesAchieved],
-      successTags: Object.fromEntries(GAME.successTags),
-      historyLen: GAME.history.length
-    }));
-  }
   elStart.classList.add("hidden");
   elGame.classList.remove("hidden");
   refreshOptions();
@@ -605,7 +563,7 @@ function renderStatus() {
   const s = GAME;
   setHTML(elStatus, `
     <div>Energie: <strong>${s.energy}</strong> &nbsp; Stress: <strong>${s.stress}</strong> &nbsp; Hoffnung: <strong>${s.money}</strong> &nbsp; Einsicht (XP): <strong>${s.xp}</strong></div>
-    <div>Pfad: <span class="pill">Aufarbeitung</span> &nbsp; <span class="muted">v${window.CH ? window.CH.VERSION : '—'} · Build ${window.CH ? window.CH.BUILD : '—'}</span></div>
+    <div>Pfad: <span class="pill">Aufarbeitung</span></div>
     <div>Perks: ${s.perks.size ? [...s.perks].join(", ") : "–"}</div>
     <div>Meilensteine: ${s.milestonesAchieved.size ? [...s.milestonesAchieved].join(", ") : "–"}</div>
   `);
@@ -624,7 +582,7 @@ function refreshOptions() {
 /* ---------- Kartenaufbau ---------- */
 function optionCard(opt) {
   const def = opt.def;
-  const prob = successProbability(GAME, def, def.baseDC);
+  const prob = successProbability(GAME, def, def.baseDC); // 0..100
   const div = document.createElement("div");
   div.className = "option-card";
 
@@ -659,13 +617,14 @@ function optionCard(opt) {
     </div>
   `;
 
-  // Aktion starten (mit Safe-Wrap)
-  div.querySelector("button.primary").addEventListener("click", window.CH ? CH.safeWrap(() => {
+  // Aktion starten
+  div.querySelector("button.primary").addEventListener("click", () => {
     const entry = applyAction(GAME, opt);
     prependTextLine(elLog, entry);
     if (GAME.ended) { showEnd(); } else { refreshOptions(); renderStatus(); renderCooldowns(); }
-  }, null, `option:${def.id}`) : () => {});
+  });
 
+  // Fokusmodus: Details global ein-/ausblenden
   const details = div.querySelector(".details");
   if (document.body.classList.contains("focus")) details.style.display = "none";
 
@@ -704,16 +663,8 @@ on(elFocus, "click", () => {
   document.body.classList.toggle("focus");
   const onState = document.body.classList.contains("focus");
   elFocus.textContent = `Fokusmodus: ${onState ? "AN" : "AUS"}`;
-  if (GAME) refreshOptions();
+  if (GAME) refreshOptions(); // Cards sofort neu rendern
 });
-if (window.CH) on(elDebugOpen, "click", () => CH.ui.open());
 
 /* ---------- Init ---------- */
-if (window.CH) {
-  CH.loader.ready(CH.safeWrap(() => {
-    toStart();
-    CH.logger.info('Game-UI initialisiert.');
-  }, null, 'boot'));
-} else {
-  document.addEventListener('DOMContentLoaded', () => toStart());
-}
+toStart();
