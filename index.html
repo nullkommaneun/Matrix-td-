@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Closure Hub — Aufarbeitung</title>
+  <title>RESET</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -11,62 +11,84 @@
 
   <!-- START SCREEN -->
   <section id="start-screen">
-    <h1>Closure Hub — Aufarbeitung</h1>
+    <h1>RESET</h1>
+
     <div class="row cols-2">
+      <!-- Profil -->
       <div class="panel">
-        <h3>Profil (anonym)</h3>
+        <h3>Profil</h3>
         <div class="muted">Kontext: <strong>Beziehungs-Aufarbeitung</strong> · Modus: <strong>Selbstreflexion</strong></div>
         <div class="sep"></div>
-        <div class="inline" style="gap:10px; flex-wrap:wrap;">
+
+        <div class="stack" style="gap:10px;">
+          <div class="inline">
+            <label class="muted" for="name-input">Name:</label>
+            <input id="name-input" placeholder="Nur Buchstaben (2–20)" pattern="[A-Za-zÄÖÜäöüß]{2,20}" />
+            <span id="name-ok" class="danger">✖</span>
+          </div>
+
           <div class="inline">
             <span class="muted">Geschlecht:</span> <span id="gender-label">Divers</span>
             <button id="gender-toggle">Wechseln</button>
           </div>
+
           <div class="inline">
-            <span class="muted">Alter:</span>
-            <button id="age-minus">−</button>
-            <span id="age-val" style="display:inline-block; width:48px; text-align:center;">18</span>
-            <button id="age-plus">+</button>
+            <label class="muted" for="age-input">Alter:</label>
+            <input id="age-input" type="number" min="10" max="99" value="18" style="width:90px;" />
           </div>
+
           <div class="inline">
             <span class="muted">Seed (optional):</span>
             <input id="seed-input" placeholder="z. B. 12345" style="min-width:180px;" />
+            <button id="seed-dice" title="Seed würfeln">🎲</button>
           </div>
         </div>
       </div>
 
+      <!-- Attribute -->
       <div class="panel">
-        <h3>Attribute – Punkte übrig: <span id="pts-left">10</span></h3>
+        <h3>Attribute — Punkte übrig: <span id="pts-left">10</span></h3>
+
         <div class="stat-row">
-          <div>Selbstbild <span class="muted">(Appearance)</span></div>
-          <button data-stat="Appearance" data-delta="-1">−</button>
-          <div id="stat-Appearance" style="text-align:center;">2</div>
-          <button data-stat="Appearance" data-delta="1">+</button>
+          <div>Selbstbild <span class="hint" title="Selbstwert & Auftreten; hilft bei Kontakt-Management & Netzwerk">?</span></div>
+          <button data-stat="Selbstbild" data-delta="-1">−</button>
+          <div id="stat-Selbstbild" style="text-align:center;">5</div>
+          <button data-stat="Selbstbild" data-delta="1">+</button>
         </div>
+
         <div class="stat-row">
-          <div>Körper/Ruhe <span class="muted">(Physique)</span></div>
-          <button data-stat="Physique" data-delta="-1">−</button>
-          <div id="stat-Physique" style="text-align:center;">2</div>
-          <button data-stat="Physique" data-delta="1">+</button>
+          <div>Regulation <span class="hint" title="Körperliche Ruhe/Atmung; stärkt Aftercare & Erholung">?</span></div>
+          <button data-stat="Regulation" data-delta="-1">−</button>
+          <div id="stat-Regulation" style="text-align:center;">5</div>
+          <button data-stat="Regulation" data-delta="1">+</button>
         </div>
+
         <div class="stat-row">
-          <div>Klarheit <span class="muted">(Intellect)</span></div>
-          <button data-stat="Intellect" data-delta="-1">−</button>
-          <div id="stat-Intellect" style="text-align:center;">2</div>
-          <button data-stat="Intellect" data-delta="1">+</button>
+          <div>Klarheit <span class="hint" title="Reflexion/Reframing; Journaling, Trigger-Karte">?</span></div>
+          <button data-stat="Klarheit" data-delta="-1">−</button>
+          <div id="stat-Klarheit" style="text-align:center;">5</div>
+          <button data-stat="Klarheit" data-delta="1">+</button>
         </div>
+
         <div class="stat-row">
-          <div>Glück <span class="muted">(Luck)</span></div>
-          <button data-stat="Luck" data-delta="-1">−</button>
-          <div id="stat-Luck" style="text-align:center;">2</div>
-          <button data-stat="Luck" data-delta="1">+</button>
+          <div>Grenzen <span class="hint" title="Abgrenzung & Ich-Botschaften; Kein-Kontakt-Schritte">?</span></div>
+          <button data-stat="Grenzen" data-delta="-1">−</button>
+          <div id="stat-Grenzen" style="text-align:center;">5</div>
+          <button data-stat="Grenzen" data-delta="1">+</button>
+        </div>
+
+        <div class="stat-row">
+          <div>Zuversicht <span class="hint" title="Hoffnung/Handlungszuversicht; ersetzt 'Luck'">?</span></div>
+          <button data-stat="Zuversicht" data-delta="-1">−</button>
+          <div id="stat-Zuversicht" style="text-align:center;">5</div>
+          <button data-stat="Zuversicht" data-delta="1">+</button>
         </div>
       </div>
     </div>
 
     <div style="margin-top:10px;">
       <button id="confirm-btn" class="primary" disabled>Start</button>
-      <span class="muted">Verteile alle Punkte, um zu starten.</span>
+      <span id="start-hint" class="muted">Verteile alle Punkte & fülle Profil aus.</span>
     </div>
 
     <p class="muted" style="margin-top:10px; font-size:12px;">
@@ -77,9 +99,9 @@
   <!-- GAME SCREEN -->
   <section id="game-screen" class="hidden">
     <div class="header">
-      <h2>Closure Hub</h2>
+      <h2>RESET</h2>
       <div class="inline">
-        <button id="btn-focus">Fokusmodus: AUS</button>
+        <button id="btn-focus">FOKUS: AUS</button>
         <button id="btn-refresh">Optionen aktualisieren</button>
         <button id="btn-exit">Freiwillig beenden</button>
         <button id="btn-restart">Neustart</button>
@@ -115,7 +137,6 @@
       <p id="end-summary" class="muted"></p>
 
       <div class="sep"></div>
-
       <h3>Reflexionsbericht</h3>
       <div id="end-report" class="muted" style="white-space:pre-wrap; line-height:1.35;"></div>
 
@@ -130,7 +151,7 @@
   </section>
 </div>
 
-<!-- Debug-Panel (versteckt) -->
+<!-- Debug-Panel -->
 <div id="debug-panel" class="debug-panel hidden">
   <div class="panel">
     <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -161,11 +182,11 @@
   </div>
 </div>
 
-<!-- JS laden: Boot zuerst, dann Game; beide mit 'defer' (Reihenfolge bleibt erhalten) -->
+<!-- Scripts -->
 <script src="boot.js" defer></script>
 <script src="game.js" defer></script>
 
-<!-- Mini-Preflight: zeigt Hinweis, falls boot.js NICHT geladen wurde -->
+<!-- Preflight-Hinweis, falls boot.js fehlt -->
 <script>
   window.addEventListener('DOMContentLoaded', function(){
     setTimeout(function(){
@@ -177,8 +198,7 @@
           '<p class="muted">Die Datei <code>boot.js</code> wurde nicht gefunden oder blockiert. '+
           'Prüfe die Pfadangabe und lade die Seite über HTTP/HTTPS (nicht <code>file://</code>).</p>'+
           '<div style="margin-top:8px"><button id="__pf_close" class="primary">OK</button></div></div>';
-        document.body.appendChild(w);
-        w.querySelector('#__pf_close').onclick = function(){ w.remove(); };
+        document.body.appendChild(w); w.querySelector('#__pf_close').onclick=function(){ w.remove(); };
       }
     }, 0);
   });
