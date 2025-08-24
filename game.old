@@ -1,24 +1,22 @@
 /* ============================================================================
-   RESET — Spielengine & UI (game.js)  v0.12.0
-   ---------------------------------------------------------------------------
-   - Nutzt externen Kartenkatalog aus `cards.js` (window.RESET_CARDS)
-   - Schlanke Engine: lädt/validiert/transformiert Karten → ACTIONS
-   - Entscheidungslogik: Phasen (P1..P5), Utility-Scoring, Risk/DC-Fit, Neuheit
-   - UI: Startscreen (Name/Alter/Seed/Attribute), Spielscreen, Endscreen
-   - Catalog-Modus: linke Spalte zeigt ALLE Karten (für Content/Balance)
-   ---------------------------------------------------------------------------
-   Abhängigkeiten:
-     • boot.js (CH.* optional für Debug/Health-Checks)
-     • cards.js (stellt window.RESET_CARDS.cards bereit)
+   RESET — Spielengine & UI (game.js)  v0.11.0
+   Fokus dieses Builds:
+     - Leicht verständliche Kartenbezeichnungen
+     - Hintergrund: fortgeschrittene Entscheidungslogik (Phasen, Nutzenfunktion)
+       · Phasen: stabilisierung → aufarbeitung → integration (automatisch erkannt)
+       · Utility je Phase: Gewichte auf XP / Hoffnung / Stress / Energie / Milestones
+       · Familien-Bias: stabilisieren | reflektieren | abgrenzen | kontakt | zukunft
+       · Risk-Bias + DC-Fit, Neuheitsbonus, Gefahrencheck (Energie/Stress)
+       · Auswahl: pro Risiko (safe/medium/hard) jeweils beste Karte (argmax)
    ============================================================================ */
 
-/* ========== RNG =========================================================== */
+/* ---------- RNG ---------- */
 function xmur3(str){let h=1779033703^str.length;for(let i=0;i<str.length;i++){h=Math.imul(h^str.charCodeAt(i),3432918353);h=(h<<13)|(h>>>19);}return function(){h=Math.imul(h^(h>>>16),2246822507);h=Math.imul(h^(h>>>13),3266489909);h^=h>>>16;return h>>>0;};}
 function sfc32(a,b,c,d){return function(){a>>>=0;b>>>=0;c>>>=0;d>>>=0;let t=(a+b)|0;a=b^(b>>>9);b=(c+(c<<3))|0;c=(c<<21)|(c>>>11);d=(d+1)|0;t=(t+d)|0;c=(c+t)|0;return (t>>>0)/4294967296;};}
 const makeRngFromSeed=(seed)=>{const s=xmur3(seed);return sfc32(s(),s(),s(),s());};
 const d10=(rng)=>1+Math.floor(rng()*10);
 
-/* ========== Enums ========================================================= */
+/* ---------- Enums ---------- */
 const Stat = {
   Selbstbild: "Selbstbild",
   Regulation: "Regulation",
@@ -30,14 +28,15 @@ const Perk = { Networker:"Networker", Workhorse:"Workhorse", Analytical:"Analyti
 const Path = { Aufarbeitung:"Aufarbeitung" };
 const Risk = { Safe:"Safe", Medium:"Medium", Hard:"Hard" };
 
-/* ========== Helpers ======================================================= */
+/* ---------- Small Utils ---------- */
 const clamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
 const signStr=(n)=>(n>=0?`+${n}`:`${n}`);
 const el=(id)=>document.getElementById(id);
 const on=(t,ev,h)=>t&&t.addEventListener(ev,(window.CH?CH.safeWrap(h,t,`${ev}#${t.id||t.tagName}`):h));
 const setHTML=(n,html)=>{ n.innerHTML=html; };
+function prependTextLine(node, line){ const div=document.createElement('div'); div.textContent=`• ${line}`; node.prepend(div); }
 
-/* ========== Perk/Luck & Prob ============================================= */
+/* ---------- Perk & Luck ---------- */
 function perkStatBonus(perks, def){
   let b=0;
   if(perks.has(Perk.Analytical) && def.tags.includes("reflect")) b+=2;
@@ -49,68 +48,74 @@ function luckShift(zuversicht, perks){
   const lucky = (perks.has(Perk.LuckyBreak) && zuversicht <= 8) ? 1 : 0;
   return base + lucky;
 }
+
+/* ---------- Erfolgschance ---------- */
 function successProbability(state, def, dc){
   const baseStat = state.stats[def.stat];
   const statBonus = perkStatBonus(state.perks, def);
   const ls = luckShift(state.stats.Zuversicht, state.perks);
   let successes=0;
   for(let r=1;r<=10;r++){ const total = baseStat + statBonus + r + ls; if(total >= dc) successes++; }
-  return successes*10; // %
+  return successes*10; // Prozent
 }
 
-/* ========== Karten-Import (aus cards.js) ================================== */
-// Liest RESET_CARDS und wandelt sie in Engine-Aktionen um
-function actionsFromCards(payload) {
-  const raw = (payload && payload.cards) ? payload.cards : [];
+/* ========================================================================== */
+/*  KARTEN & MEILENSTEINE                                                     */
+/* ========================================================================== */
 
-  const mapStat = (s) => {
-    if (Stat[s]) return Stat[s];
-    const key = Object.keys(Stat).find(k => k.toLowerCase() === String(s).toLowerCase());
-    return key ? Stat[key] : Stat.Klarheit;
-  };
+function makeActions(){
+  const list=[]; const A=(o)=>({ cooldown:0, tags:[], pathRestriction:null, prereq:()=>true, onSuccess:()=>{}, onFailure:()=>{}, ...o });
 
-  return raw.map(c => {
-    const ex = Array.isArray(c.examples) ? c.examples.filter(Boolean) : [];
-    return {
-      id: c.id,
-      name: c.title,
-      // zwei Beispielzeilen untereinander
-      desc: ex.length ? `• ${ex[0]}\n• ${ex[1]||''}`.trim() : '',
-      baseDC: Number.isFinite(c.dc) ? c.dc : 7,
-      stat: mapStat(c.stat),
-      // Engine-Konvention: positive energyCost = Kosten; negative = Energie zurück
-      energyCost: -(c.delta?.E || 0),
-      stressDelta: (c.delta?.S || 0),
-      moneyDelta:  (c.delta?.H || 0),
-      xpGain: Number.isFinite(c.xp) ? c.xp : 0,
-      tags: [
-        ...(c.tags || []),
-        `theme:${c.theme}`,
-        c.positive ? 'positive' : 'negative'
-      ],
-      cooldown: 0,
-      pathRestriction: null,
-      prereq: () => true,
-      onSuccess: () => {},
-      onFailure: () => {}
-    };
-  });
+  // Stabilisieren / Aftercare (Familie: stabilisieren)
+  list.push(A({ id:"breath_reset", name:"Atmen", desc:"Atem-Reset; beruhigt, erdet.",
+    baseDC:0, stat:Stat.Regulation, energyCost:-10, stressDelta:-20, moneyDelta:0, xpGain:0, tags:["rest","stabilize","aftercare","fam:stabilisieren"] }));
+  list.push(A({ id:"mindfulness_5", name:"Körper-Scan", desc:"5 Minuten Achtsamkeit.",
+    baseDC:0, stat:Stat.Regulation, energyCost:-5, stressDelta:-15, moneyDelta:0, xpGain:0, tags:["rest","stabilize","aftercare","fam:stabilisieren"] }));
+  list.push(A({ id:"aftercare_walk", name:"Spaziergang kurz", desc:"10 Minuten draußen.",
+    baseDC:6, stat:Stat.Regulation, energyCost:-8, stressDelta:-12, moneyDelta:+2, xpGain:4, tags:["aftercare","stabilize","fam:stabilisieren"] }));
+  list.push(A({ id:"aftercare_music", name:"Musik 2 Songs", desc:"2–3 beruhigende Tracks.",
+    baseDC:6, stat:Stat.Selbstbild, energyCost:-6, stressDelta:-10, moneyDelta:+3, xpGain:3, tags:["aftercare","stabilize","fam:stabilisieren"] }));
+  list.push(A({ id:"aftercare_checkin", name:"Check-in (3 Sätze)", desc:"Wie geht’s? Was brauch ich? Was als Nächstes?",
+    baseDC:7, stat:Stat.Klarheit, energyCost:6, stressDelta:-6, moneyDelta:+4, xpGain:6, tags:["aftercare","reflect","stabilize","fam:stabilisieren"] }));
+  list.push(A({ id:"aftercare_gratitude", name:"Dankbarkeit ×3", desc:"Drei kleine Dinge wertschätzen.",
+    baseDC:7, stat:Stat.Klarheit, energyCost:6, stressDelta:-6, moneyDelta:+5, xpGain:6, tags:["aftercare","growth","fam:stabilisieren"] }));
+
+  // Reflektieren (Familie: reflektieren)
+  list.push(A({ id:"journal_patterns", name:"Muster finden", desc:"3 wiederkehrende Konfliktmuster.",
+    baseDC:7, stat:Stat.Klarheit, energyCost:12, stressDelta:8, moneyDelta:0, xpGain:12, tags:["reflect","milestone-setup","fam:reflektieren"] }));
+  list.push(A({ id:"values_list", name:"Werte 5", desc:"Top-5 Werte & Grenzen.",
+    baseDC:8, stat:Stat.Klarheit, energyCost:14, stressDelta:8, moneyDelta:0, xpGain:14, tags:["reflect","boundaries","milestone-setup","fam:reflektieren"] }));
+  list.push(A({ id:"trigger_map", name:"Trigger-Karte", desc:"Auslöser → Reaktion → Gegenzug.",
+    baseDC:9, stat:Stat.Klarheit, energyCost:16, stressDelta:10, moneyDelta:0, xpGain:18, tags:["skills","milestone-setup","fam:reflektieren"] }));
+  list.push(A({ id:"memory_reframe", name:"Reframe Szene", desc:"Szene neutral neu beschreiben.",
+    baseDC:9, stat:Stat.Klarheit, energyCost:14, stressDelta:10, moneyDelta:0, xpGain:16, tags:["reflect","fam:reflektieren"] }));
+  list.push(A({ id:"redflags_sheet", name:"Red Flags", desc:"Eigene Warnsignale notieren.",
+    baseDC:8, stat:Stat.Klarheit, energyCost:12, stressDelta:10, moneyDelta:0, xpGain:12, tags:["reflect","fam:reflektieren"] }));
+  list.push(A({ id:"future_vision", name:"Zukunftsbild", desc:"3 Kriterien für gesunde Beziehung.",
+    baseDC:8, stat:Stat.Klarheit, energyCost:12, stressDelta:8, moneyDelta:0, xpGain:12, tags:["growth","milestone-setup","fam:reflektieren","fam:zukunft"] }));
+  list.push(A({ id:"relapse_plan", name:"Rückfall-Plan", desc:"Wenn Impuls X → Handlung Y.",
+    baseDC:9, stat:Stat.Klarheit, energyCost:14, stressDelta:10, moneyDelta:0, xpGain:16, tags:["skills","stabilize","fam:reflektieren","fam:zukunft"] }));
+
+  // Abgrenzen / Kontakt (Familie: abgrenzen/kontakt)
+  list.push(A({ id:"digital_hygiene", name:"Benachr. stumm", desc:"Mute/Archive setzen.",
+    baseDC:7, stat:Stat.Selbstbild, energyCost:6, stressDelta:6, moneyDelta:0, xpGain:8, tags:["contact_mgmt","stabilize","fam:kontakt"] }));
+  list.push(A({ id:"no_contact_action", name:"Kein-Kontakt", desc:"1 Schritt ohne Kontakt.",
+    baseDC:8, stat:Stat.Grenzen, energyCost:10, stressDelta:10, moneyDelta:0, xpGain:12, tags:["contact_mgmt","milestone-setup","fam:abgrenzen"], cooldown:1 }));
+  list.push(A({ id:"return_items", name:"Dinge klären", desc:"Eigene Dinge sichern / Rückgabe regeln.",
+    baseDC:10, stat:Stat.Grenzen, energyCost:16, stressDelta:14, moneyDelta:0, xpGain:16, tags:["contact_mgmt","closure","fam:abgrenzen"],
+    prereq:(s)=>(s.successTags.get("contact_mgmt")||0)>=2 }));
+  list.push(A({ id:"boundary_script", name:"Grenzen sagen", desc:"Zwei Ich-Botschaften formulieren.",
+    baseDC:8, stat:Stat.Grenzen, energyCost:12, stressDelta:10, moneyDelta:0, xpGain:14, tags:["boundaries","skills","fam:abgrenzen"] }));
+  list.push(A({ id:"support_call", name:"Support-Gespräch", desc:"20 Min sachlich mit Vertrauensperson.",
+    baseDC:8, stat:Stat.Selbstbild, energyCost:8, stressDelta:8, moneyDelta:0, xpGain:10, tags:["network","stabilize","fam:kontakt"] }));
+
+  // Routinen (Familie: zukunft)
+  list.push(A({ id:"routine_pillar", name:"Routine-Pfeiler", desc:"Tägliche Micro-Routine.",
+    baseDC:7, stat:Stat.Regulation, energyCost:10, stressDelta:6, moneyDelta:0, xpGain:10, tags:["stabilize","milestone-setup","fam:zukunft"], cooldown:1 }));
+
+  return list;
 }
-// Validierung (IDs eindeutig, Zahlenfelder numerisch, Stat gültig)
-function validateCards(actions) {
-  const ids = new Set();
-  for (const a of actions) {
-    if (!a.id || ids.has(a.id)) throw new Error(`Duplikat/leer: id=${a.id}`);
-    ids.add(a.id);
-    if (!Object.keys(Stat).includes(a.stat)) throw new Error(`Unbekannter Stat bei ${a.id}: ${a.stat}`);
-    ['baseDC','energyCost','stressDelta','moneyDelta','xpGain'].forEach(k=>{
-      if (typeof a[k] !== 'number' || !Number.isFinite(a[k])) throw new Error(`Zahl erwartet: ${a.id}.${k}`);
-    });
-  }
-  return true;
-}
 
-/* ========== Milestones ==================================================== */
 function makeMilestones(){
   return [
     { id:"clarity", name:"Klarheit gewonnen", desc:"Muster & Werte benannt.",
@@ -136,8 +141,11 @@ function makeMilestones(){
   ];
 }
 
-/* ========== Advanced Decision Engine ===================================== */
-// Familie (für Gruppierung/Scoring) aus Tags ermitteln
+/* ========================================================================== */
+/*  ENTSCHEIDUNGSLOGIK (Advanced)                                             */
+/* ========================================================================== */
+
+// Familie aus Tags ermitteln (erste passende gewinnt)
 function familyOf(def){
   const T = def.tags || [];
   if (T.includes("fam:stabilisieren") || T.includes("aftercare") || T.includes("rest")) return "stabilisieren";
@@ -147,13 +155,15 @@ function familyOf(def){
   if (T.includes("fam:zukunft")       || T.includes("growth") || T.includes("milestone-setup")) return "zukunft";
   return "reflektieren";
 }
+
 // Phase je State
 function phaseOf(state){
   if (state.stress >= 60 || state.energy <= 30) return "stabilisierung";
   if ((state.successTags.get("reflect")||0) < 3 || state.xp < 60) return "aufarbeitung";
   return "integration";
 }
-// Phasen-Gewichte
+
+// Gewichte je Phase (höher = wichtiger)
 function phaseCoeffs(phase){
   switch(phase){
     case "stabilisierung": return { xp:0.7, hope:0.8, stress:1.4, energy:1.2, milestone:0.6 };
@@ -162,6 +172,8 @@ function phaseCoeffs(phase){
     default:               return { xp:1.0, hope:1.0, stress:1.0, energy:1.0, milestone:1.0 };
   }
 }
+
+// Bias der Phase auf Kartenfamilien (multiplikativ als +x)
 function familyPhaseBias(phase, fam){
   const map = {
     stabilisierung: { stabilisieren:+0.50, reflektieren:-0.05, abgrenzen:-0.10, kontakt:-0.10, zukunft:-0.10 },
@@ -170,6 +182,8 @@ function familyPhaseBias(phase, fam){
   };
   return (map[phase] && map[phase][fam]) ?? 0;
 }
+
+// Risk-Bias je Phase (multiplikativ)
 function riskPhaseBias(phase, risk){
   const R = String(risk).toLowerCase();
   const map = {
@@ -179,19 +193,30 @@ function riskPhaseBias(phase, risk){
   };
   return (map[phase] && map[phase][R]) ?? 1.0;
 }
+
+// DC-Fit (0..1), je näher an Target, desto besser
 function dcFit(baseDC, target){ return Math.max(0, Math.min(1, 1 - Math.abs(baseDC - target)/6)); }
+
+// Neuheit aus sinceSeen (leicht positiv, Cap)
 function noveltyBonus(state, def){
-  const age = state.sinceSeen.get(def.id) ?? 0;
+  const age = state.sinceSeen.get(def.id) ?? 0; // je höher, desto länger nicht gesehen
   return Math.max(-0.10, Math.min(0.25, (age - 3) * 0.03));
 }
+
+// Score einer Aktion unter den aktuellen Bedingungen
 function scoreAction(state, def, targetDC, risk){
+  // Ressourcenwirkungen unter Perks
   const [sAdj, hAdj, xAdj] = applyPerkEconomy(state.perks, def, def.stressDelta, def.moneyDelta, def.xpGain);
+
+  // Gefahrencheck (nicht wählbar, wenn kaputt)
   if ((state.energy - def.energyCost) < 0) return -1e9;
   if ((state.stress + Math.max(0, sAdj)) > 100) return -1e9;
 
   const phase = phaseOf(state);
   const coeff = phaseCoeffs(phase);
   const fam = familyOf(def);
+
+  // Erfolg wirkt v. a. auf Milestone-Fortschritt → p nur dort nutzen
   const p = successProbability(state, def, def.baseDC) / 100;
 
   const baseUtility =
@@ -205,12 +230,17 @@ function scoreAction(state, def, targetDC, risk){
   const phaseBias = 1 + familyPhaseBias(phase, fam);
   const riskBiasV = riskPhaseBias(phase, risk);
   const novel = noveltyBonus(state, def);
-  const jitter = (state.rng() - 0.5) * 0.01;
+  const jitter = (state.rng() - 0.5) * 0.01; // minimale Streuung
 
-  return (baseUtility + milestoneScore) * (0.9 + 0.2*fit) * phaseBias * riskBiasV + novel + jitter;
+  // Zusammensetzen – Fit als sanfter Multiplikator, Bias multiplicativ
+  const score = (baseUtility + milestoneScore) * (0.9 + 0.2*fit) * phaseBias * riskBiasV + novel + jitter;
+  return score;
 }
 
-/* ========== Engine Core =================================================== */
+/* ========================================================================== */
+/*  ENGINE                                                                     */
+/* ========================================================================== */
+
 function createState(meta, stats, perks, path, seedStr){
   const rng = makeRngFromSeed(seedStr);
   return {
@@ -223,17 +253,9 @@ function createState(meta, stats, perks, path, seedStr){
   };
 }
 
-function applyPerkEconomy(perks, def, stressDelta, hopeDelta, xpGain){
-  let s=stressDelta, h=hopeDelta, x=xpGain;
-  if(perks.has(Perk.Workhorse) && def.tags.includes("stabilize")){ s=Math.trunc(s*0.85); h=Math.trunc(h*1.10); }
-  if(perks.has(Perk.Stoic) && s>0) s=Math.trunc(s*0.90);
-  if(perks.has(Perk.Creative) && def.tags.includes("growth")) x=Math.trunc(x*1.10);
-  return [s,h,x];
-}
-
 function choiceByWeights(rng, weights){ const total=weights.reduce((a,b)=>a+b,0); if(total<=0) return -1; let t=rng()*total,c=0; for(let i=0;i<weights.length;i++){ c+=weights[i]; if(t<=c) return i; } return weights.length-1; }
 
-// Auswahl: pro Risiko die beste (argmax Utility); Fallback mit Aftercare
+// NEU: Advanced-Auswahl pro Risiko (argmax Utility)
 function pickOptions(state, pool){
   const risks=[Risk.Safe, Risk.Medium, Risk.Hard];
   const targets=new Map([
@@ -242,6 +264,7 @@ function pickOptions(state, pool){
     [Risk.Hard,  10 + Math.floor(state.rng()*2)]
   ]);
 
+  // Neuheit altern lassen
   const X_NEU=5;
   pool.forEach(def=>{
     state.sinceSeen.set(def.id, (state.sinceSeen.get(def.id) ?? (X_NEU+1)) + 1);
@@ -250,6 +273,7 @@ function pickOptions(state, pool){
   const out=[];
   for (const risk of risks){
     const target = targets.get(risk);
+    // Kandidaten filtern
     const candidates = pool.filter(def=>{
       const cd=state.cooldowns.get(def.id) ?? 0;
       const pathOK = (def.pathRestriction===null) || (def.pathRestriction===state.path);
@@ -257,6 +281,7 @@ function pickOptions(state, pool){
     });
     if (!candidates.length) continue;
 
+    // Argmax nach Score
     let best=null, bestScore=-1e9;
     for (const def of candidates){
       const s = scoreAction(state, def, target, risk);
@@ -268,15 +293,24 @@ function pickOptions(state, pool){
     }
   }
 
+  // Falls <3, mit Aftercare auffüllen (bestbewertete)
   if (out.length<3){
     const ids=new Set(out.map(o=>o.def.id));
     const fillers = pool.filter(d=>(d.tags.includes("aftercare")||d.tags.includes("rest")) && !ids.has(d.id));
-    const target = 6;
+    const target = 6; // soft
     fillers.sort((a,b)=> scoreAction(state,b,target,Risk.Safe) - scoreAction(state,a,target,Risk.Safe));
     for (const f of fillers){ if (out.length>=3) break; out.push({def:f, risk:Risk.Safe, targetDC:target, score:scoreAction(state,f,target,Risk.Safe)}); }
   }
 
   return out.slice(0,3);
+}
+
+function applyPerkEconomy(perks, def, stressDelta, hopeDelta, xpGain){
+  let s=stressDelta, h=hopeDelta, x=xpGain;
+  if(perks.has(Perk.Workhorse) && def.tags.includes("stabilize")){ s=Math.trunc(s*0.85); h=Math.trunc(h*1.10); }
+  if(perks.has(Perk.Stoic) && s>0) s=Math.trunc(s*0.90);
+  if(perks.has(Perk.Creative) && def.tags.includes("growth")) x=Math.trunc(x*1.10);
+  return [s,h,x];
 }
 
 function applyAction(state, option){
@@ -346,7 +380,7 @@ function legacySummary(state){
 }
 function endGame(state,title,summary){ state.ended=true; state.endTitle=title; state.endSummary=summary; }
 
-/* ========== Reports/Export =============================================== */
+/* ---------- Reports/Export ---------- */
 function buildReport(state){
   const total=state.history.length||1; const succ=state.history.filter(Boolean).length; const rate=Math.round((succ/total)*100);
   const entries=[...state.successTags.entries()].sort((a,b)=>b[1]-a[1]); const top=entries.slice(0,5).map(([k,v])=>`${k}: ${v}`).join(", ")||"–";
@@ -373,7 +407,10 @@ function downloadText(filename, text){
   a.href=URL.createObjectURL(blob); a.download=filename; document.body.appendChild(a); a.click(); URL.revokeObjectURL(a.href); a.remove();
 }
 
-/* ========== UI: Elemente ================================================== */
+/* ========================================================================== */
+/*  UI-BINDING & STARTSCREEN                                                   */
+/* ========================================================================== */
+
 const elStart=el("start-screen");
 const elGame=el("game-screen");
 const elEnd=el("end-screen");
@@ -405,10 +442,10 @@ const elEndTitle=el("end-title");
 const elEndSummary=el("end-summary");
 const elToStart=el("btn-to-start");
 
-/* ========== Start-Screen / Attribute ===================================== */
+/* ---------- Start Setup ---------- */
 const NAME_RE = /^[A-Za-zÄÖÜäöüß]{2,20}$/;
-const BASELINE_TOTAL = 5*5;
-const POOL_TOTAL     = 10;
+const BASELINE_TOTAL = 5*5;  // 5 Attribute à 5
+const POOL_TOTAL     = 10;   // +10 Punkte verteilbar
 
 const pre = {
   name: "",
@@ -418,8 +455,29 @@ const pre = {
   poolLeft: POOL_TOTAL
 };
 
+let GAME=null;
+const ACTIONS=makeActions();
+
+/* ---------- Health Checks ---------- */
+if(window.CH){
+  CH.loader.registerModule('game','0.11.0');
+  try{
+    CH.loader.checkDom([
+      "start-screen","game-screen","end-screen","name-input","name-ok","gender-label","gender-toggle",
+      "age-input","seed-input","seed-dice","confirm-btn","pts-left","start-hint",
+      "stat-Selbstbild","stat-Regulation","stat-Klarheit","stat-Grenzen","stat-Zuversicht",
+      "options","log","status","cooldowns","btn-refresh","btn-exit","btn-restart","btn-focus","btn-debug",
+      "end-title","end-summary","btn-to-start","btn-mdc"
+    ]);
+    CH.loader.checkActions(ACTIONS, Stat);
+    CH.logger.info('Health-Check game.js OK.');
+  }catch(e){ CH.diagnostics.recordError(e,'health-check(game)'); }
+}
+
+/* ---------- Start Screen Logic ---------- */
 function sumStats(){ const s=pre.stats; return s.Selbstbild+s.Regulation+s.Klarheit+s.Grenzen+s.Zuversicht; }
 function recomputePool(){ const used = sumStats() - BASELINE_TOTAL; pre.poolLeft = POOL_TOTAL - used; }
+
 function validName(){ return NAME_RE.test(pre.name); }
 function validAge(){ const n = Number(elAgeInput.value); return Number.isInteger(n) && n>=10 && n<=99; }
 function canStart(){
@@ -427,6 +485,7 @@ function canStart(){
   const poolOk  = pre.poolLeft === 0;
   return validName() && validAge() && attrsOk && poolOk;
 }
+
 function updateStartUI(){
   elName.value = pre.name;
   elGender.textContent = pre.gender;
@@ -453,6 +512,7 @@ function updateStartUI(){
 
   elConfirm.disabled = !canStart();
 }
+
 function toStart(){
   pre.name=""; pre.gender="Divers"; pre.age=18;
   pre.stats={ Selbstbild:5, Regulation:5, Klarheit:5, Grenzen:5, Zuversicht:5 };
@@ -468,104 +528,31 @@ function toStart(){
   if(window.CH) CH.logger.info('Zurück zum Start.');
 }
 
-/* Buttons Attribute/Profil */
+/* Attribute Buttons */
 document.querySelectorAll("button[data-stat]").forEach(btn=>{
   on(btn, "click", ()=>{
     const stat = btn.getAttribute("data-stat");
-    const delta = parseInt(btn.getAttribute("data-delta"), 10);
+    const delta = parseInt(btn.getAttribute("data-delta"), 10); // -1 / +1
     const cur = pre.stats[stat];
-    if(delta>0){ recomputePool(); if(pre.poolLeft<=0||cur>=10) return; pre.stats[stat]=Math.min(10,cur+1); }
-    else { if(cur<=1) return; pre.stats[stat]=Math.max(1,cur-1); }
+    if(delta>0){
+      recomputePool();
+      if(pre.poolLeft<=0) return;
+      if(cur>=10) return;
+      pre.stats[stat] = Math.min(10, cur+1);
+    } else {
+      if(cur<=1) return;
+      pre.stats[stat] = Math.max(1, cur-1);
+    }
     updateStartUI();
   });
 });
-on(elName, "input", ()=>{ pre.name=(elName.value||"").trim(); updateStartUI(); });
+
+on(elName, "input", ()=>{ pre.name = (elName.value||"").trim(); updateStartUI(); });
 on(elGenderToggle, "click", ()=>{ pre.gender = pre.gender==="Männlich"?"Weiblich":(pre.gender==="Weiblich"?"Divers":"Männlich"); updateStartUI(); });
 on(elAgeInput, "input", ()=>{ const n=Number(elAgeInput.value); pre.age = Number.isFinite(n)?n:pre.age; updateStartUI(); });
-on(elSeedDice, "click", ()=>{ elSeedInput.value=String(Date.now()); });
+on(elSeedDice, "click", ()=>{ elSeedInput.value = String(Date.now()); });
 
-/* ========== Karten laden ================================================== */
-const ACTIONS = actionsFromCards(window.RESET_CARDS || {});
-if (window.CH) {
-  try { validateCards(ACTIONS); CH.loader.checkActions(ACTIONS, Stat); }
-  catch (e) { CH.diagnostics.recordError(e, 'cards-validate'); }
-}
-
-/* ========== Catalog-Ansicht (rote Spalte „alle Karten“) =================== */
-const CATALOG_MODE = true; // zeigt links immer alle Karten (für Content/Balancing)
-
-// Hilfsanzeige: E/S/H-Boxen aus Engine-Werten rekonstruieren
-function eshBoxes(action){
-  const E = -action.energyCost;            // Energie-Delta (positiv = zurückgewinnen)
-  const S = action.stressDelta;
-  const H = action.moneyDelta;
-  return `<div class="meta" style="margin-top:6px">
-    [ E ${signStr(E)} ] &nbsp; [ S ${signStr(S)} ] &nbsp; [ H ${signStr(H)} ]
-  </div>`;
-}
-// Statische Karte (ohne „Ausführen“)
-function catalogCard(action){
-  const div=document.createElement("div");
-  div.className="option-card";
-  const lines = (action.desc||'').split('\n').filter(Boolean);
-  div.innerHTML = `
-    <h4 style="margin:0 0 6px;">${action.name}</h4>
-    <div class="meta">Stat: ${action.stat} · DC: ${action.baseDC}</div>
-    <div class="details" style="margin:6px 0 0;">
-      <div class="muted">${lines.map(x=>x.startsWith('•')?x:`• ${x}`).join('<br>')}</div>
-      ${eshBoxes(action)}
-      <div class="meta">Tags: ${action.tags.join(', ')}</div>
-    </div>
-  `;
-  return div;
-}
-// Gruppieren nach Familien und rendern
-function renderCatalog(){
-  const container = elOptions; container.innerHTML="";
-  const labels = { stabilisieren:"Stabilisieren", reflektieren:"Reflektieren", abgrenzen:"Abgrenzen", kontakt:"Kontakt", zukunft:"Zukunft" };
-  const order = ["stabilisieren","reflektieren","abgrenzen","kontakt","zukunft"];
-
-  const byFam = new Map();
-  for (const a of ACTIONS){ const fam=familyOf(a); if(!byFam.has(fam)) byFam.set(fam,[]); byFam.get(fam).push(a); }
-  for (const fam of order){
-    const list = (byFam.get(fam)||[]).slice().sort((a,b)=> (a.baseDC-b.baseDC) || a.name.localeCompare(b.name,'de'));
-    if (!list.length) continue;
-    const h=document.createElement('h4'); h.style.margin="6px 0"; h.textContent=labels[fam];
-    const sepTop=document.createElement('div'); sepTop.className='sep';
-    container.appendChild(h); container.appendChild(sepTop);
-    list.forEach(a=> container.appendChild(catalogCard(a)));
-    const sep=document.createElement('div'); sep.className='sep'; container.appendChild(sep);
-  }
-}
-
-/* ========== Optionenkarten (Spielmodus – derzeit nicht benutzt) ========== */
-function refreshOptions(){ const opts=pickOptions(GAME, ACTIONS); elOptions.innerHTML=""; for(const opt of opts) elOptions.appendChild(optionCard(opt)); }
-function optionCard(opt){
-  const def=opt.def; const prob=successProbability(GAME,def,def.baseDC);
-  const div=document.createElement("div"); div.className="option-card";
-  div.innerHTML = `
-    <h4 style="margin:0 0 6px;">${def.name}<span class="badge">${String(opt.risk).toLowerCase()}</span></h4>
-    <div class="meta">Stat: ${def.stat} · DC: ${def.baseDC} · Erfolgschance: ${prob}%</div>
-    <div class="details" style="margin:6px 0 0;">
-      <div class="muted">${(def.desc||'').replaceAll('\n','<br>')}</div>
-      <div class="meta">Kosten: Energie ${def.energyCost<0?`+${-def.energyCost}`:def.energyCost} · Stress ${signStr(def.stressDelta)} · Hoffnung ${signStr(def.moneyDelta)} · Einsicht +${def.xpGain}</div>
-      <div class="meta">Tags: ${def.tags.join(", ")||"–"}</div>
-    </div>
-    <div style="margin-top:8px; display:flex; gap:8px; align-items:center;">
-      <button class="primary">Ausführen</button>
-    </div>
-  `;
-  div.querySelector("button.primary").addEventListener("click", ()=> {
-    const entry=applyAction(GAME,opt);
-    const logLine=`${entry}`;
-    const ldiv=document.createElement('div'); ldiv.textContent='• '+logLine; elLog.prepend(ldiv);
-    if(GAME.ended) showEnd(); else { refreshOptions(); renderStatus(); renderCooldowns(); }
-  });
-  return div;
-}
-
-/* ========== Game Start & Status ========================================== */
-let GAME=null;
+/* ---------- Game Start ---------- */
 function startGame(){
   const seed = (elSeedInput.value || (`${pre.name}#${pre.age}`)).trim();
   GAME = createState(
@@ -578,7 +565,8 @@ function startGame(){
   if(window.CH){
     CH.logger.info('Spielstart', { seed, stats:GAME.stats, meta:GAME.meta });
     CH.diagnostics.setStateSupplier(()=>({
-      seed: GAME.seed, meta: GAME.meta,
+      seed: GAME.seed,
+      meta: GAME.meta,
       resources:{ energy:GAME.energy, stress:GAME.stress, hope:GAME.money, xp:GAME.xp },
       ended: GAME.ended, milestones:[...GAME.milestonesAchieved],
       successTags: Object.fromEntries(GAME.successTags), historyLen: GAME.history.length
@@ -586,9 +574,10 @@ function startGame(){
   }
   elStart.classList.add("hidden");
   elGame.classList.remove("hidden");
-  if (CATALOG_MODE) renderCatalog(); else refreshOptions();
-  renderStatus(); renderCooldowns();
+  refreshOptions(); renderStatus(); renderCooldowns();
 }
+
+/* ---------- Game UI ---------- */
 function renderStatus(){
   const s=GAME;
   setHTML(elStatus, `
@@ -600,16 +589,34 @@ function renderStatus(){
   `);
 }
 function renderCooldowns(){ const lines=[]; for(const [k,v] of GAME.cooldowns.entries()) if(v>0) lines.push(`• ${k}: ${v} Aktionen`); setHTML(elCooldowns, lines.length?lines.join("<br>"):"Keine."); }
+function refreshOptions(){ const opts=pickOptions(GAME, ACTIONS); elOptions.innerHTML=""; for(const opt of opts) elOptions.appendChild(optionCard(opt)); }
 
-/* Buttons Spielscreen */
-on(elConfirm, "click", startGame);
-on(elRefresh, "click", ()=> (CATALOG_MODE ? renderCatalog() : refreshOptions()));
-on(elExit, "click", ()=>{ endGame(GAME, "Freiwilliger Abschluss", legacySummary(GAME)); showEnd(); });
-on(elRestart, "click", ()=> toStart());
-on(elFocus, "click", ()=>{ document.body.classList.toggle("focus"); const onState=document.body.classList.contains("focus"); elFocus.textContent = `FOKUS: ${onState?"AN":"AUS"}`; if(GAME) (CATALOG_MODE ? renderCatalog() : refreshOptions()); });
-on(elDebugOpen, "click", ()=> window.CH && CH.ui && CH.ui.open());
+function optionCard(opt){
+  const def=opt.def; const prob=successProbability(GAME,def,def.baseDC);
+  const div=document.createElement("div"); div.className="option-card";
+  div.innerHTML = `
+    <h4 style="margin:0 0 6px;">${def.name}<span class="badge">${String(opt.risk).toLowerCase()}</span></h4>
+    <div class="meta">Stat: ${def.stat} · Schwierigkeit (DC): ${def.baseDC} · Erfolgschance: ${prob}%</div>
+    <div class="details" style="margin:6px 0 0;">
+      <div class="muted">${def.desc}</div>
+      <div class="meta">Kosten: Energie ${def.energyCost<0?`+${-def.energyCost}`:def.energyCost} · Stress ${signStr(def.stressDelta)} · Hoffnung ${signStr(def.moneyDelta)} · Einsicht +${def.xpGain}</div>
+      <div class="meta">Tags: ${def.tags.join(", ")||"–"}</div>
+    </div>
+    <div style="margin-top:8px; display:flex; gap:8px; align-items:center;">
+      <button class="primary">Ausführen</button>
+    </div>
+  `;
+  div.querySelector("button.primary").addEventListener("click", ()=> {
+    const entry=applyAction(GAME,opt);
+    prependTextLine(elLog, entry);
+    if(GAME.ended) showEnd(); else { refreshOptions(); renderStatus(); renderCooldowns(); }
+  });
+  const details = div.querySelector(".details");
+  if(document.body.classList.contains("focus")) details.style.display="none";
+  return div;
+}
 
-/* ========== Endscreen ===================================================== */
+/* ---------- Endscreen ---------- */
 function showEnd(){
   elGame.classList.add("hidden"); elEnd.classList.remove("hidden");
   elEndTitle.textContent = GAME.endTitle; elEndSummary.textContent = GAME.endSummary;
@@ -620,17 +627,21 @@ function showEnd(){
   const btnDl=el("btn-download");
   const btnMdc=el("btn-mdc");
 
-  if(btnCont) btnCont.onclick = ()=>{ GAME.sandbox=true; GAME.noEnds=true; GAME.ended=false; GAME.energy=Math.max(GAME.energy,30); GAME.stress=Math.min(GAME.stress,95); elEnd.classList.add("hidden"); elGame.classList.remove("hidden"); (CATALOG_MODE ? renderCatalog() : refreshOptions()); renderStatus(); renderCooldowns(); };
+  if(btnCont) btnCont.onclick = ()=>{ GAME.sandbox=true; GAME.noEnds=true; GAME.ended=false; GAME.energy=Math.max(GAME.energy,30); GAME.stress=Math.min(GAME.stress,95); elEnd.classList.add("hidden"); elGame.classList.remove("hidden"); refreshOptions(); renderStatus(); renderCooldowns(); };
   if(btnReseed) btnReseed.onclick = ()=>{ const same=GAME.seed||(""+Date.now()); toStart(); elSeedInput.value=same; };
   if(btnDl) btnDl.onclick = ()=>{ const fname=`reset_run_${(GAME.seed||'seed')}.json`; downloadText(fname, sessionAsJSON(GAME)); };
   if(btnMdc) btnMdc.onclick = ()=>{ if(window.CH&&CH.ui) CH.ui.open(); };
   if(elToStart) elToStart.onclick = ()=> toStart();
 }
 
-/* ========== Init ========================================================== */
-if(window.CH && CH.loader){
-  CH.loader.registerModule('game','0.12.0');
-  CH.loader.ready(CH.safeWrap(()=>{ toStart(); CH.logger.info('Game-UI initialisiert.'); }, null, 'boot'));
-} else {
-  document.addEventListener('DOMContentLoaded', ()=> toStart());
-}
+/* ---------- Wire Up Buttons ---------- */
+on(elConfirm, "click", startGame);
+on(elRefresh, "click", ()=> refreshOptions());
+on(elExit, "click", ()=>{ endGame(GAME, "Freiwilliger Abschluss", legacySummary(GAME)); showEnd(); });
+on(elRestart, "click", ()=> toStart());
+on(elFocus, "click", ()=>{ document.body.classList.toggle("focus"); const onState=document.body.classList.contains("focus"); elFocus.textContent = `FOKUS: ${onState?"AN":"AUS"}`; if(GAME) refreshOptions(); });
+on(elDebugOpen, "click", ()=> window.CH && CH.ui && CH.ui.open());
+
+/* ---------- Init ---------- */
+if(window.CH && CH.loader){ CH.loader.ready(CH.safeWrap(()=>{ toStart(); CH.logger.info('Game-UI initialisiert.'); }, null, 'boot')); }
+else document.addEventListener('DOMContentLoaded', ()=> toStart());
