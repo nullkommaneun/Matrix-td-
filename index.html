@@ -11,7 +11,20 @@
 
   <!-- START SCREEN -->
   <section id="start-screen">
-    <h1>RESET</h1>
+    <div class="brandline">
+      <svg class="logo-reset" viewBox="0 0 64 64" aria-hidden="true">
+        <defs>
+          <linearGradient id="logoGrad" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%"  stop-color="#00ff88"/>
+            <stop offset="100%" stop-color="#7bc6a7"/>
+          </linearGradient>
+        </defs>
+        <path d="M32 8a24 24 0 1 1-17 7" fill="none" stroke="url(#logoGrad)" stroke-width="4" stroke-linecap="round" stroke-dasharray="4 6"/>
+        <polyline points="13,8 15,22 27,20" fill="none" stroke="url(#logoGrad)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M28 42 v-20 h8 a6 6 0 0 1 0 12 h-8 m8 0 l6 8" fill="none" stroke="url(#logoGrad)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <h1>RESET</h1>
+    </div>
 
     <div class="row cols-2">
       <!-- Profil -->
@@ -48,35 +61,30 @@
       <!-- Attribute -->
       <div class="panel">
         <h3>Attribute — Punkte übrig: <span id="pts-left">10</span></h3>
-
         <div class="stat-row">
           <div>Selbstbild</div>
           <button data-stat="Selbstbild" data-delta="-1">−</button>
           <div id="stat-Selbstbild" style="text-align:center;">5</div>
           <button data-stat="Selbstbild" data-delta="1">+</button>
         </div>
-
         <div class="stat-row">
           <div>Regulation</div>
           <button data-stat="Regulation" data-delta="-1">−</button>
           <div id="stat-Regulation" style="text-align:center;">5</div>
           <button data-stat="Regulation" data-delta="1">+</button>
         </div>
-
         <div class="stat-row">
           <div>Klarheit</div>
           <button data-stat="Klarheit" data-delta="-1">−</button>
           <div id="stat-Klarheit" style="text-align:center;">5</div>
           <button data-stat="Klarheit" data-delta="1">+</button>
         </div>
-
         <div class="stat-row">
           <div>Grenzen</div>
           <button data-stat="Grenzen" data-delta="-1">−</button>
           <div id="stat-Grenzen" style="text-align:center;">5</div>
           <button data-stat="Grenzen" data-delta="1">+</button>
         </div>
-
         <div class="stat-row">
           <div>Zuversicht</div>
           <button data-stat="Zuversicht" data-delta="-1">−</button>
@@ -99,7 +107,15 @@
   <!-- GAME SCREEN -->
   <section id="game-screen" class="hidden">
     <div class="header">
-      <h2>RESET</h2>
+      <div class="brandline">
+        <svg class="logo-reset" viewBox="0 0 64 64" aria-hidden="true">
+          <defs><linearGradient id="logoGrad2" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#00ff88"/><stop offset="100%" stop-color="#7bc6a7"/></linearGradient></defs>
+          <path d="M32 8a24 24 0 1 1-17 7" fill="none" stroke="url(#logoGrad2)" stroke-width="4" stroke-linecap="round" stroke-dasharray="4 6"/>
+          <polyline points="13,8 15,22 27,20" fill="none" stroke="url(#logoGrad2)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M28 42 v-20 h8 a6 6 0 0 1 0 12 h-8 m8 0 l6 8" fill="none" stroke="url(#logoGrad2)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <h2>RESET</h2>
+      </div>
       <div class="inline">
         <button id="btn-focus">FOKUS: AUS</button>
         <button id="btn-refresh">Optionen aktualisieren</button>
@@ -160,7 +176,6 @@
     </div>
     <div class="sep"></div>
 
-    <!-- drei Spalten: Health | Logs | Telemetry -->
     <div class="row cols-3">
       <div>
         <h4>Health-Check</h4>
@@ -194,7 +209,7 @@
 <script src="stories.js" defer></script>
 <script src="game.js" defer></script>
 
-<!-- Preflight-Hinweis, falls boot.js fehlt -->
+<!-- Preflight, falls boot.js fehlt -->
 <script>
   window.addEventListener('DOMContentLoaded', function(){
     setTimeout(function(){
@@ -203,8 +218,7 @@
         w.style.cssText='position:fixed;inset:0;background:rgba(10,13,10,.92);z-index:99998;padding:16px';
         w.innerHTML = '<div class="panel" style="max-width:900px;margin:10vh auto">'+
           '<h3>Hinweis: Debug/Diagnostics nicht geladen</h3><div class="sep"></div>'+
-          '<p class="muted">Die Datei <code>boot.js</code> wurde nicht gefunden oder blockiert. '+
-          'Prüfe die Pfadangabe und lade die Seite über HTTP/HTTPS (nicht <code>file://</code>).</p>'+
+          '<p class="muted">Die Datei <code>boot.js</code> wurde nicht gefunden oder blockiert.</p>'+
           '<div style="margin-top:8px"><button id="__pf_close" class="primary">OK</button></div></div>';
         document.body.appendChild(w);
         w.querySelector('#__pf_close').onclick=function(){ w.remove(); };

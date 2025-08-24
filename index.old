@@ -50,35 +50,35 @@
         <h3>Attribute — Punkte übrig: <span id="pts-left">10</span></h3>
 
         <div class="stat-row">
-          <div>Selbstbild <span class="hint" title="Selbstwert & Auftreten; hilft bei Kontakt-Management & Netzwerk">?</span></div>
+          <div>Selbstbild</div>
           <button data-stat="Selbstbild" data-delta="-1">−</button>
           <div id="stat-Selbstbild" style="text-align:center;">5</div>
           <button data-stat="Selbstbild" data-delta="1">+</button>
         </div>
 
         <div class="stat-row">
-          <div>Regulation <span class="hint" title="Körperliche Ruhe/Atmung; stärkt Aftercare & Erholung">?</span></div>
+          <div>Regulation</div>
           <button data-stat="Regulation" data-delta="-1">−</button>
           <div id="stat-Regulation" style="text-align:center;">5</div>
           <button data-stat="Regulation" data-delta="1">+</button>
         </div>
 
         <div class="stat-row">
-          <div>Klarheit <span class="hint" title="Reflexion/Reframing; Journaling, Trigger-Karte">?</span></div>
+          <div>Klarheit</div>
           <button data-stat="Klarheit" data-delta="-1">−</button>
           <div id="stat-Klarheit" style="text-align:center;">5</div>
           <button data-stat="Klarheit" data-delta="1">+</button>
         </div>
 
         <div class="stat-row">
-          <div>Grenzen <span class="hint" title="Abgrenzung & Ich-Botschaften; Kein-Kontakt-Schritte">?</span></div>
+          <div>Grenzen</div>
           <button data-stat="Grenzen" data-delta="-1">−</button>
           <div id="stat-Grenzen" style="text-align:center;">5</div>
           <button data-stat="Grenzen" data-delta="1">+</button>
         </div>
 
         <div class="stat-row">
-          <div>Zuversicht <span class="hint" title="Hoffnung/Handlungszuversicht; ersetzt 'Luck'">?</span></div>
+          <div>Zuversicht</div>
           <button data-stat="Zuversicht" data-delta="-1">−</button>
           <div id="stat-Zuversicht" style="text-align:center;">5</div>
           <button data-stat="Zuversicht" data-delta="1">+</button>
@@ -111,7 +111,7 @@
 
     <div class="row cols-3">
       <div class="panel">
-        <h3>Optionen <span class="muted">(sicher / mittel / schwer)</span></h3>
+        <h3>Karten</h3>
         <div id="options"></div>
       </div>
 
@@ -160,31 +160,38 @@
     </div>
     <div class="sep"></div>
 
-    <div class="row cols-2">
+    <!-- drei Spalten: Health | Logs | Telemetry -->
+    <div class="row cols-3">
       <div>
         <h4>Health-Check</h4>
         <div id="debug-health" class="log" style="height:240px;"></div>
       </div>
       <div>
-        <h4>Logs</h4>
+        <h4>System-Logs</h4>
         <div id="debug-logs" class="log" style="height:240px;"></div>
+      </div>
+      <div>
+        <h4>Story-Telemetrie</h4>
+        <div id="debug-telemetry" class="log" style="height:240px; white-space:pre-wrap;"></div>
       </div>
     </div>
 
     <div class="sep"></div>
-    <h4>Maschinencode</h4>
+    <h4>Maschinencode & Export</h4>
     <textarea id="debug-code" rows="6" style="width:100%;"></textarea>
     <div style="margin-top:6px; display:flex; gap:8px; flex-wrap:wrap;">
-      <button id="debug-run" class="primary">Generieren</button>
-      <button id="debug-copy">Kopieren</button>
-      <span class="muted">→ Code kopieren und zur Auswertung bereitstellen.</span>
+      <button id="debug-run" class="primary">MDC generieren</button>
+      <button id="debug-copy">MDC kopieren</button>
+      <button id="debug-export">CSV exportieren</button>
+      <span class="muted">→ CSV enthält Story-Log (Zeit, Karte, Familie, Outcome, Deltas, Ressourcen …)</span>
     </div>
   </div>
 </div>
 
-<!-- Scripts -->
+<!-- Scripts: boot → cards → stories → game -->
 <script src="boot.js" defer></script>
-<script src="cards.js"></script>
+<script src="cards.js" defer></script>
+<script src="stories.js" defer></script>
 <script src="game.js" defer></script>
 
 <!-- Preflight-Hinweis, falls boot.js fehlt -->
@@ -199,7 +206,8 @@
           '<p class="muted">Die Datei <code>boot.js</code> wurde nicht gefunden oder blockiert. '+
           'Prüfe die Pfadangabe und lade die Seite über HTTP/HTTPS (nicht <code>file://</code>).</p>'+
           '<div style="margin-top:8px"><button id="__pf_close" class="primary">OK</button></div></div>';
-        document.body.appendChild(w); w.querySelector('#__pf_close').onclick=function(){ w.remove(); };
+        document.body.appendChild(w);
+        w.querySelector('#__pf_close').onclick=function(){ w.remove(); };
       }
     }, 0);
   });
