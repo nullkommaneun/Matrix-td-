@@ -1,15 +1,12 @@
 /* ============================================================================
-   RESET — Spielengine & UI (game.js)  v0.12.2
+   RESET — Spielengine & UI (game.js)  v0.12.3
    ---------------------------------------------------------------------------
-   Neu in dieser Version
-   - Zeigt nur die 3 sinnvollsten Karten (XP-first + Sicherheitsnetze + Diversity)
-   - Klickbar: Ausführen → Log / Ressourcen / Meilensteine
-   - Pro Karte optionaler **Debug-Breakdown** (sichtbar, wenn ?debug=1)
-   - Keine „Tags“-Zeile im UI
-   ---------------------------------------------------------------------------
-   Abhängigkeiten:
-     • boot.js  (liefert CH.*, optional aber empfohlen)
-     • cards.js (stellt window.RESET_CARDS.cards bereit)
+   Neu:
+   - Top-3-Auswahl (XP-first) mit Sicherheitsnetzen + Diversity
+   - Nach Klick werden NEUE 3 Karten gezeigt (Hand-Lock-Mechanik)
+   - Debug-Breakdown pro Karte (sichtbar mit ?debug=1)
+   - Kein Tags-Output im UI
+   Abhängigkeiten: boot.js (optional), cards.js (liefert window.RESET_CARDS.cards)
    ============================================================================ */
 
 /* ========== RNG =========================================================== */
@@ -62,7 +59,7 @@ function actionsFromCards(payload){
       desc:ex.length?`• ${ex[0]}\n• ${ex[1]||''}`.trim():'',
       baseDC:Number.isFinite(c.dc)?c.dc:7,
       stat:mapStat(c.stat),
-      energyCost:-(c.delta?.E||0),   // Engine: Kosten positiv, Rückgewinn negativ → wir invertieren
+      energyCost:-(c.delta?.E||0),   // Kosten positiv, Rückgewinn negativ → invertieren
       stressDelta:(c.delta?.S||0),
       moneyDelta:(c.delta?.H||0),
       xpGain:Number.isFinite(c.xp)?c.xp:0,
@@ -127,9 +124,12 @@ function applyPerkEconomy(perks, def, s,h,x){
   return [s,h,x];
 }
 
-/* ========== XP-first Auswahl (Top-3) + Debug-Breakdown ==================== */
-// Phase & Gewichte
-function phaseOf(state){ if(state.stress>=60||state.energy<=30) return "stabilisieren"; if((state.successTags.get("reflect")||0)<3 || state.xp<60) return "aufarbeitung"; return "integration"; }
+/* ========== XP-first Auswahl (Top-3) + Hand-Lock + Debug ================== */
+function phaseOf(state){
+  if(state.stress>=60||state.energy<=30) return "stabilisieren";
+  if((state.successTags.get("reflect")||0)<3 || state.xp<60) return "aufarbeitung";
+  return "integration";
+}
 function weightsForPhase(phase){
   if(phase==="stabilisieren") return { w_xp:0.6,  w_ms:0.20, w_stress:1.20, w_energy:0.90, w_nov:0.05 };
   if(phase==="aufarbeitung")  return { w_xp:1.0,  w_ms:0.35, w_stress:0.60, w_energy:0.40, w_nov:0.05 };
@@ -162,11 +162,29 @@ function pickTop3XP(state, actions){
   // Neuheit altern lassen
   actions.forEach(a => state.sinceSeen.set(a.id, (state.sinceSeen.get(a.id) ?? 6) + 1));
 
-  const scored = actions.map(a => ({ def:a, dbg:scoreBreakdown(state,a) }))
-                        .filter(x => !x.dbg.unsafe)
-                        .sort((a,b)=> b.dbg.score - a.dbg.score);
+  // 1) Primär nur Aktionen mit cooldown<=0 zulassen
+  const eligible = actions.filter(a => (state.cooldowns.get(a.id)||0) <= 0 && a.prereq(state));
 
-  // Diversity: bevorzugt unterschiedliche Familien
+  const scoreList = (list)=> list
+    .map(a => ({ def:a, dbg:scoreBreakdown(state,a) }))
+    .filter(x => !x.dbg.unsafe)
+    .sort((a,b)=> b.dbg.score - a.dbg.score);
+
+  let scored = scoreList(eligible);
+
+  // 2) Fallback: wenn zu wenig, auch gesperrte berücksichtigen
+  if (scored.length < 3){
+    const scoredAll = scoreList(actions);
+    // Mergen, ohne Duplikate
+    const seen = new Set(scored.map(x=>x.def.id));
+    for (const item of scoredAll){
+      if (seen.has(item.def.id)) continue;
+      scored.push(item); seen.add(item.def.id);
+      if (scored.length>=3) break;
+    }
+  }
+
+  // 3) Diversity: bevorzugt unterschiedliche Familien
   const families = new Set(), out=[];
   for(const item of scored){
     const fam=item.dbg.fam;
@@ -174,13 +192,12 @@ function pickTop3XP(state, actions){
     out.push(item); families.add(fam);
     if(out.length===3) break;
   }
-  // Falls <3, fülle nach
+  // 4) Falls <3, mit nächsten besten auffüllen
   let i=0; while(out.length<3 && i<scored.length){ if(!out.includes(scored[i])) out.push(scored[i]); i++; }
 
   // sinceSeen für gewählte resetten
   out.forEach(x=> state.sinceSeen.set(x.def.id, 0));
 
-  // Rückgabe in Engine-Option-Form
   return out.map(x => ({ def:x.def, risk:"xp", targetDC:x.def.baseDC, score:x.dbg.score, dbg:x.dbg }));
 }
 
@@ -205,6 +222,7 @@ function applyAction(state, option){
   state.money+=hAdj; state.xp+=xAdj;
 
   if(def.cooldown&&def.cooldown>0) state.cooldowns.set(def.id,def.cooldown);
+  // globaler Tick für alle Cooldowns (inkl. Hand-Lock)
   for(const [k,v] of [...state.cooldowns.entries()]) state.cooldowns.set(k,Math.max(0,v-1));
 
   if(success){ def.tags.forEach(t=>state.successTags.set(t,(state.successTags.get(t)||0)+1)); def.onSuccess(state); }
@@ -237,8 +255,8 @@ function checkMilestones(state){
   }
 }
 function legacySummary(state){
-  let rank=0; if(["new_pillars"].some(id=>state.milestonesAchieved.has(id))) rank=3000;
-  else if(state.milestonesAchieved.size>=2) rank=2000; else if(state.milestonesAchieved.size>=1) rank=1000;
+  let rank=0; if(["new_pillars"].some(id=>state.milestonesAchieved.has(id)))rank=3000;
+  else if(state.milestonesAchieved.size>=2)rank=2000; else if(state.milestonesAchieved.size>=1)rank=1000;
   const hope=Math.trunc(state.money), ms=state.milestonesAchieved.size*100, well=(100-state.stress)*5;
   return `Legacy-Score: ${rank+hope+ms+well}  (Rang=${rank}, Hoffnung=${hope}, Milestones=${ms}, Wohlbefinden=${well}).`;
 }
@@ -319,20 +337,24 @@ on(elSeedDice,"click",()=>{ elSeedInput.value=String(Date.now()); });
 const ACTIONS = actionsFromCards(window.RESET_CARDS||{});
 if(window.CH){ try{ validateCards(ACTIONS); CH.loader.checkActions(ACTIONS, Stat); } catch(e){ CH.diagnostics.recordError(e,'cards-validate'); } }
 
-/* ========== Rendering: Top-3 + Debug-Breakdown ============================ */
+/* ========== Rendering: Top-3 + Debug-Breakdown + Hand-Lock =============== */
 const SHOW_CARD_DEBUG = !!(window.CH && CH.config && CH.config.debug);
+const HAND_LOCK_TURNS = 2;           // wie lange gezeigte Karten gesperrt werden (Anzeige-Sperre)
+let CURRENT_HAND = [];               // aktuell gezeigte Karten-IDs
 
 function eshBoxes(a){
   const E=-a.energyCost, S=a.stressDelta, H=a.moneyDelta;
   return `<div class="meta" style="margin-top:6px">[ E ${signStr(E)} ] &nbsp; [ S ${signStr(S)} ] &nbsp; [ H ${signStr(H)} ]</div>`;
 }
-function debugBlock(dbg){
+function debugBlock(def, dbg){
   if(!SHOW_CARD_DEBUG || !dbg || dbg.unsafe) return '';
+  const cd = (GAME && GAME.cooldowns.get(def.id)) || 0;
+  const age = (GAME && GAME.sinceSeen.get(def.id)) || 0;
   const f=(x)=> (typeof x==='number' ? (Math.round(x*100)/100) : x);
   return `
     <details class="meta" style="margin-top:6px" open>
       <summary>Debug</summary>
-      <div class="meta">Phase: <strong>${dbg.phase}</strong> · Familie: ${dbg.fam}</div>
+      <div class="meta">Phase: <strong>${dbg.phase}</strong> · Familie: ${dbg.fam} · cd=${cd} · since=${age}</div>
       <div class="meta">p=${f(dbg.p)} · XPexp=${f(dbg.XPexp)} · MS=${f(dbg.MS)} · nov=${f(dbg.novelty)}</div>
       <div class="meta">after: E=${f(dbg.energyAfter)} · S=${f(dbg.stressAfter)}</div>
       <div class="meta">penalties: stress=${f(dbg.stressPenalty)} · energy=${f(dbg.energyPenalty)}</div>
@@ -352,11 +374,16 @@ function interactiveCard(opt){ // opt = {def, dbg}
     <div class="details" style="margin:6px 0 0;">
       <div class="muted">${lines.map(x=>x.startsWith('•')?x:`• ${x}`).join('<br>')}</div>
       ${eshBoxes(def)}
-      ${debugBlock(dbg)}
+      ${debugBlock(def, dbg)}
     </div>
     <div style="margin-top:8px"><button class="primary">Ausführen</button></div>
   `;
   div.querySelector("button.primary").addEventListener("click", ()=>{
+    // Hand-Lock: alle aktuell gezeigten Karten für HAND_LOCK_TURNS sperren
+    CURRENT_HAND.forEach(id=>{
+      const cur = GAME.cooldowns.get(id) || 0;
+      GAME.cooldowns.set(id, Math.max(cur, HAND_LOCK_TURNS));
+    });
     const entry = applyAction(GAME, {def, risk:"xp", targetDC:def.baseDC});
     const li=document.createElement('div'); li.textContent='• '+entry; elLog.prepend(li);
     if(GAME.ended) showEnd(); else { renderTop3(); renderStatus(); renderCooldowns(); }
@@ -367,6 +394,7 @@ function renderTop3(){
   const top = pickTop3XP(GAME, ACTIONS);
   elOptions.innerHTML="";
   top.forEach(o => elOptions.appendChild(interactiveCard(o)));
+  CURRENT_HAND = top.map(o=>o.def.id);
 }
 
 /* ========== Start / Status / Buttons ===================================== */
@@ -420,7 +448,7 @@ function showEnd(){
 
 /* ========== Init ========================================================== */
 if(window.CH && CH.loader){
-  CH.loader.registerModule('game','0.12.2');
+  CH.loader.registerModule('game','0.12.3');
   CH.loader.ready(CH.safeWrap(()=>{ toStart(); CH.logger.info('Game-UI initialisiert.'); }, null, 'boot'));
 } else {
   document.addEventListener('DOMContentLoaded', ()=> toStart());
