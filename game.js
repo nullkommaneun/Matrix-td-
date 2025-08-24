@@ -1,11 +1,13 @@
 /* ============================================================================
-   RESET — Spielengine & UI (game.js)  v0.10.0
-   - Titel: RESET
-   - Profil: Name (nur Buchstaben), Alter (Input), Seed (optional, 🎲)
-   - Attribute: 5 Grundlagen (Start 5), min 1, max 10, +10 Punkte zu verteilen
-   - Start wird erst aktiv, wenn Name/Alter gültig & Punkte exakt verteilt
-   - Neue Stat-Map + Kartenzuordnung, LuckShift ⇒ Zuversicht
-   - Boot/Debug-Integration (CH.*) bleibt erhalten
+   RESET — Spielengine & UI (game.js)  v0.11.0
+   Fokus dieses Builds:
+     - Leicht verständliche Kartenbezeichnungen
+     - Hintergrund: fortgeschrittene Entscheidungslogik (Phasen, Nutzenfunktion)
+       · Phasen: stabilisierung → aufarbeitung → integration (automatisch erkannt)
+       · Utility je Phase: Gewichte auf XP / Hoffnung / Stress / Energie / Milestones
+       · Familien-Bias: stabilisieren | reflektieren | abgrenzen | kontakt | zukunft
+       · Risk-Bias + DC-Fit, Neuheitsbonus, Gefahrencheck (Energie/Stress)
+       · Auswahl: pro Risiko (safe/medium/hard) jeweils beste Karte (argmax)
    ============================================================================ */
 
 /* ---------- RNG ---------- */
@@ -57,59 +59,59 @@ function successProbability(state, def, dc){
   return successes*10; // Prozent
 }
 
-/* ---------- Content: Actions & Milestones ---------- */
+/* ========================================================================== */
+/*  KARTEN & MEILENSTEINE                                                     */
+/* ========================================================================== */
+
 function makeActions(){
   const list=[]; const A=(o)=>({ cooldown:0, tags:[], pathRestriction:null, prereq:()=>true, onSuccess:()=>{}, onFailure:()=>{}, ...o });
 
-  // Erholung / Aftercare → Regulation
-  list.push(A({ id:"breath_reset", name:"Atem-Reset", desc:"Beruhigt, erdet.",
-    baseDC:0, stat:Stat.Regulation, energyCost:-10, stressDelta:-20, moneyDelta:0, xpGain:0, tags:["rest","stabilize","aftercare"] }));
-  list.push(A({ id:"mindfulness_5", name:"5-Min Achtsamkeit", desc:"Auf Körper & Atem fokussieren.",
-    baseDC:0, stat:Stat.Regulation, energyCost:-5, stressDelta:-15, moneyDelta:0, xpGain:0, tags:["rest","stabilize","aftercare"] }));
+  // Stabilisieren / Aftercare (Familie: stabilisieren)
+  list.push(A({ id:"breath_reset", name:"Atmen", desc:"Atem-Reset; beruhigt, erdet.",
+    baseDC:0, stat:Stat.Regulation, energyCost:-10, stressDelta:-20, moneyDelta:0, xpGain:0, tags:["rest","stabilize","aftercare","fam:stabilisieren"] }));
+  list.push(A({ id:"mindfulness_5", name:"Körper-Scan", desc:"5 Minuten Achtsamkeit.",
+    baseDC:0, stat:Stat.Regulation, energyCost:-5, stressDelta:-15, moneyDelta:0, xpGain:0, tags:["rest","stabilize","aftercare","fam:stabilisieren"] }));
+  list.push(A({ id:"aftercare_walk", name:"Spaziergang kurz", desc:"10 Minuten draußen.",
+    baseDC:6, stat:Stat.Regulation, energyCost:-8, stressDelta:-12, moneyDelta:+2, xpGain:4, tags:["aftercare","stabilize","fam:stabilisieren"] }));
+  list.push(A({ id:"aftercare_music", name:"Musik 2 Songs", desc:"2–3 beruhigende Tracks.",
+    baseDC:6, stat:Stat.Selbstbild, energyCost:-6, stressDelta:-10, moneyDelta:+3, xpGain:3, tags:["aftercare","stabilize","fam:stabilisieren"] }));
+  list.push(A({ id:"aftercare_checkin", name:"Check-in (3 Sätze)", desc:"Wie geht’s? Was brauch ich? Was als Nächstes?",
+    baseDC:7, stat:Stat.Klarheit, energyCost:6, stressDelta:-6, moneyDelta:+4, xpGain:6, tags:["aftercare","reflect","stabilize","fam:stabilisieren"] }));
+  list.push(A({ id:"aftercare_gratitude", name:"Dankbarkeit ×3", desc:"Drei kleine Dinge wertschätzen.",
+    baseDC:7, stat:Stat.Klarheit, energyCost:6, stressDelta:-6, moneyDelta:+5, xpGain:6, tags:["aftercare","growth","fam:stabilisieren"] }));
 
-  list.push(A({ id:"aftercare_walk", name:"10-Min Spaziergang", desc:"Frische Luft, lockere Bewegung.",
-    baseDC:6, stat:Stat.Regulation, energyCost:-8, stressDelta:-12, moneyDelta:+2, xpGain:4, tags:["aftercare","stabilize"] }));
-  list.push(A({ id:"aftercare_music", name:"Musik-Session", desc:"2–3 Songs, die dich beruhigen.",
-    baseDC:6, stat:Stat.Selbstbild, energyCost:-6, stressDelta:-10, moneyDelta:+3, xpGain:3, tags:["aftercare","stabilize"] }));
-  list.push(A({ id:"aftercare_checkin", name:"Check-in in 3 Sätzen", desc:"Wie geht’s? Was brauch ich? Was tu ich als Nächstes?",
-    baseDC:7, stat:Stat.Klarheit, energyCost:6, stressDelta:-6, moneyDelta:+4, xpGain:6, tags:["aftercare","reflect","stabilize"] }));
-  list.push(A({ id:"aftercare_gratitude", name:"3-Punkte Dankbarkeit", desc:"Drei kleine Dinge heute wertschätzen.",
-    baseDC:7, stat:Stat.Klarheit, energyCost:6, stressDelta:-6, moneyDelta:+5, xpGain:6, tags:["aftercare","growth"] }));
+  // Reflektieren (Familie: reflektieren)
+  list.push(A({ id:"journal_patterns", name:"Muster finden", desc:"3 wiederkehrende Konfliktmuster.",
+    baseDC:7, stat:Stat.Klarheit, energyCost:12, stressDelta:8, moneyDelta:0, xpGain:12, tags:["reflect","milestone-setup","fam:reflektieren"] }));
+  list.push(A({ id:"values_list", name:"Werte 5", desc:"Top-5 Werte & Grenzen.",
+    baseDC:8, stat:Stat.Klarheit, energyCost:14, stressDelta:8, moneyDelta:0, xpGain:14, tags:["reflect","boundaries","milestone-setup","fam:reflektieren"] }));
+  list.push(A({ id:"trigger_map", name:"Trigger-Karte", desc:"Auslöser → Reaktion → Gegenzug.",
+    baseDC:9, stat:Stat.Klarheit, energyCost:16, stressDelta:10, moneyDelta:0, xpGain:18, tags:["skills","milestone-setup","fam:reflektieren"] }));
+  list.push(A({ id:"memory_reframe", name:"Reframe Szene", desc:"Szene neutral neu beschreiben.",
+    baseDC:9, stat:Stat.Klarheit, energyCost:14, stressDelta:10, moneyDelta:0, xpGain:16, tags:["reflect","fam:reflektieren"] }));
+  list.push(A({ id:"redflags_sheet", name:"Red Flags", desc:"Eigene Warnsignale notieren.",
+    baseDC:8, stat:Stat.Klarheit, energyCost:12, stressDelta:10, moneyDelta:0, xpGain:12, tags:["reflect","fam:reflektieren"] }));
+  list.push(A({ id:"future_vision", name:"Zukunftsbild", desc:"3 Kriterien für gesunde Beziehung.",
+    baseDC:8, stat:Stat.Klarheit, energyCost:12, stressDelta:8, moneyDelta:0, xpGain:12, tags:["growth","milestone-setup","fam:reflektieren","fam:zukunft"] }));
+  list.push(A({ id:"relapse_plan", name:"Rückfall-Plan", desc:"Wenn Impuls X → Handlung Y.",
+    baseDC:9, stat:Stat.Klarheit, energyCost:14, stressDelta:10, moneyDelta:0, xpGain:16, tags:["skills","stabilize","fam:reflektieren","fam:zukunft"] }));
 
-  // Kern-Aufarbeitung → Klarheit
-  list.push(A({ id:"journal_patterns", name:"Journaling: Muster", desc:"3 wiederkehrende Konfliktmuster benennen.",
-    baseDC:7, stat:Stat.Klarheit, energyCost:12, stressDelta:8, moneyDelta:0, xpGain:12, tags:["reflect","milestone-setup"] }));
-  list.push(A({ id:"values_list", name:"Werte-Inventur", desc:"Top-5 Werte & Grenzen notieren.",
-    baseDC:8, stat:Stat.Klarheit, energyCost:14, stressDelta:8, moneyDelta:0, xpGain:14, tags:["reflect","boundaries","milestone-setup"] }));
-  list.push(A({ id:"trigger_map", name:"Trigger-Karte", desc:"Auslöser → Reaktion → Gegenzug skizzieren.",
-    baseDC:9, stat:Stat.Klarheit, energyCost:16, stressDelta:10, moneyDelta:0, xpGain:18, tags:["skills","milestone-setup"] }));
-  list.push(A({ id:"memory_reframe", name:"Erinnerung reframen", desc:"Eine Szene neutral neu beschreiben.",
-    baseDC:9, stat:Stat.Klarheit, energyCost:14, stressDelta:10, moneyDelta:0, xpGain:16, tags:["reflect"] }));
-  list.push(A({ id:"redflags_sheet", name:"Red-Flags-Sheet", desc:"Eigene Warnsignale notieren.",
-    baseDC:8, stat:Stat.Klarheit, energyCost:12, stressDelta:10, moneyDelta:0, xpGain:12, tags:["reflect"] }));
-  list.push(A({ id:"future_vision", name:"Zukunftsbild", desc:"3 Kriterien für gesunde Beziehung definieren.",
-    baseDC:8, stat:Stat.Klarheit, energyCost:12, stressDelta:8, moneyDelta:0, xpGain:12, tags:["growth","milestone-setup"] }));
-  list.push(A({ id:"relapse_plan", name:"Rückfall-Plan", desc:"Wenn Kontaktimpuls X → Handlung Y.",
-    baseDC:9, stat:Stat.Klarheit, energyCost:14, stressDelta:10, moneyDelta:0, xpGain:16, tags:["skills","stabilize"] }));
-
-  // Kontakt-Management / Grenzen
-  list.push(A({ id:"digital_hygiene", name:"Digital: Mute/Archive", desc:"Benachrichtigungen stummschalten, Chat archivieren.",
-    baseDC:7, stat:Stat.Selbstbild, energyCost:6, stressDelta:6, moneyDelta:0, xpGain:8, tags:["contact_mgmt","stabilize"] }));
-  list.push(A({ id:"no_contact_action", name:"Kein-Kontakt-Schritt", desc:"1 konkreter Schritt ohne Kontakt.",
-    baseDC:8, stat:Stat.Grenzen, energyCost:10, stressDelta:10, moneyDelta:0, xpGain:12, tags:["contact_mgmt","milestone-setup"], cooldown:1 }));
-  list.push(A({ id:"return_items", name:"Gegenstände klären", desc:"Eigene Dinge sichern / Rückgabe regeln (ohne Treffen).",
-    baseDC:10, stat:Stat.Grenzen, energyCost:16, stressDelta:14, moneyDelta:0, xpGain:16, tags:["contact_mgmt","closure"],
+  // Abgrenzen / Kontakt (Familie: abgrenzen/kontakt)
+  list.push(A({ id:"digital_hygiene", name:"Benachr. stumm", desc:"Mute/Archive setzen.",
+    baseDC:7, stat:Stat.Selbstbild, energyCost:6, stressDelta:6, moneyDelta:0, xpGain:8, tags:["contact_mgmt","stabilize","fam:kontakt"] }));
+  list.push(A({ id:"no_contact_action", name:"Kein-Kontakt", desc:"1 Schritt ohne Kontakt.",
+    baseDC:8, stat:Stat.Grenzen, energyCost:10, stressDelta:10, moneyDelta:0, xpGain:12, tags:["contact_mgmt","milestone-setup","fam:abgrenzen"], cooldown:1 }));
+  list.push(A({ id:"return_items", name:"Dinge klären", desc:"Eigene Dinge sichern / Rückgabe regeln.",
+    baseDC:10, stat:Stat.Grenzen, energyCost:16, stressDelta:14, moneyDelta:0, xpGain:16, tags:["contact_mgmt","closure","fam:abgrenzen"],
     prereq:(s)=>(s.successTags.get("contact_mgmt")||0)>=2 }));
-  list.push(A({ id:"boundary_script", name:"Grenzen-Script", desc:"Zwei Ich-Botschaften formulieren.",
-    baseDC:8, stat:Stat.Grenzen, energyCost:12, stressDelta:10, moneyDelta:0, xpGain:14, tags:["boundaries","skills"] }));
+  list.push(A({ id:"boundary_script", name:"Grenzen sagen", desc:"Zwei Ich-Botschaften formulieren.",
+    baseDC:8, stat:Stat.Grenzen, energyCost:12, stressDelta:10, moneyDelta:0, xpGain:14, tags:["boundaries","skills","fam:abgrenzen"] }));
+  list.push(A({ id:"support_call", name:"Support-Gespräch", desc:"20 Min sachlich mit Vertrauensperson.",
+    baseDC:8, stat:Stat.Selbstbild, energyCost:8, stressDelta:8, moneyDelta:0, xpGain:10, tags:["network","stabilize","fam:kontakt"] }));
 
-  // Netzwerk (Selbstbild)
-  list.push(A({ id:"support_call", name:"Support-Gespräch", desc:"20 Min mit Vertrauensperson (sachlich).",
-    baseDC:8, stat:Stat.Selbstbild, energyCost:8, stressDelta:8, moneyDelta:0, xpGain:10, tags:["network","stabilize"] }));
-
-  // Routinen (Regulation)
-  list.push(A({ id:"routine_pillar", name:"Routine-Pfeiler", desc:"Tägliche Micro-Routine festlegen.",
-    baseDC:7, stat:Stat.Regulation, energyCost:10, stressDelta:6, moneyDelta:0, xpGain:10, tags:["stabilize","milestone-setup"], cooldown:1 }));
+  // Routinen (Familie: zukunft)
+  list.push(A({ id:"routine_pillar", name:"Routine-Pfeiler", desc:"Tägliche Micro-Routine.",
+    baseDC:7, stat:Stat.Regulation, energyCost:10, stressDelta:6, moneyDelta:0, xpGain:10, tags:["stabilize","milestone-setup","fam:zukunft"], cooldown:1 }));
 
   return list;
 }
@@ -139,7 +141,106 @@ function makeMilestones(){
   ];
 }
 
-/* ---------- Engine ---------- */
+/* ========================================================================== */
+/*  ENTSCHEIDUNGSLOGIK (Advanced)                                             */
+/* ========================================================================== */
+
+// Familie aus Tags ermitteln (erste passende gewinnt)
+function familyOf(def){
+  const T = def.tags || [];
+  if (T.includes("fam:stabilisieren") || T.includes("aftercare") || T.includes("rest")) return "stabilisieren";
+  if (T.includes("fam:reflektieren")  || T.includes("reflect")   || T.includes("skills")) return "reflektieren";
+  if (T.includes("fam:abgrenzen")     || T.includes("boundaries")) return "abgrenzen";
+  if (T.includes("fam:kontakt")       || T.includes("contact_mgmt") || T.includes("closure")) return "kontakt";
+  if (T.includes("fam:zukunft")       || T.includes("growth") || T.includes("milestone-setup")) return "zukunft";
+  return "reflektieren";
+}
+
+// Phase je State
+function phaseOf(state){
+  if (state.stress >= 60 || state.energy <= 30) return "stabilisierung";
+  if ((state.successTags.get("reflect")||0) < 3 || state.xp < 60) return "aufarbeitung";
+  return "integration";
+}
+
+// Gewichte je Phase (höher = wichtiger)
+function phaseCoeffs(phase){
+  switch(phase){
+    case "stabilisierung": return { xp:0.7, hope:0.8, stress:1.4, energy:1.2, milestone:0.6 };
+    case "aufarbeitung":   return { xp:1.2, hope:0.8, stress:0.9, energy:0.7, milestone:1.2 };
+    case "integration":    return { xp:1.0, hope:1.0, stress:0.8, energy:0.6, milestone:1.3 };
+    default:               return { xp:1.0, hope:1.0, stress:1.0, energy:1.0, milestone:1.0 };
+  }
+}
+
+// Bias der Phase auf Kartenfamilien (multiplikativ als +x)
+function familyPhaseBias(phase, fam){
+  const map = {
+    stabilisierung: { stabilisieren:+0.50, reflektieren:-0.05, abgrenzen:-0.10, kontakt:-0.10, zukunft:-0.10 },
+    aufarbeitung:   { stabilisieren:-0.05, reflektieren:+0.40, abgrenzen:+0.20, kontakt:+0.10, zukunft:+0.10 },
+    integration:    { stabilisieren:-0.10, reflektieren:+0.00, abgrenzen:+0.10, kontakt:+0.10, zukunft:+0.50 }
+  };
+  return (map[phase] && map[phase][fam]) ?? 0;
+}
+
+// Risk-Bias je Phase (multiplikativ)
+function riskPhaseBias(phase, risk){
+  const R = String(risk).toLowerCase();
+  const map = {
+    stabilisierung: { safe:1.15, medium:0.95, hard:0.75 },
+    aufarbeitung:   { safe:0.95, medium:1.05, hard:1.00 },
+    integration:    { safe:1.00, medium:1.00, hard:1.05 }
+  };
+  return (map[phase] && map[phase][R]) ?? 1.0;
+}
+
+// DC-Fit (0..1), je näher an Target, desto besser
+function dcFit(baseDC, target){ return Math.max(0, Math.min(1, 1 - Math.abs(baseDC - target)/6)); }
+
+// Neuheit aus sinceSeen (leicht positiv, Cap)
+function noveltyBonus(state, def){
+  const age = state.sinceSeen.get(def.id) ?? 0; // je höher, desto länger nicht gesehen
+  return Math.max(-0.10, Math.min(0.25, (age - 3) * 0.03));
+}
+
+// Score einer Aktion unter den aktuellen Bedingungen
+function scoreAction(state, def, targetDC, risk){
+  // Ressourcenwirkungen unter Perks
+  const [sAdj, hAdj, xAdj] = applyPerkEconomy(state.perks, def, def.stressDelta, def.moneyDelta, def.xpGain);
+
+  // Gefahrencheck (nicht wählbar, wenn kaputt)
+  if ((state.energy - def.energyCost) < 0) return -1e9;
+  if ((state.stress + Math.max(0, sAdj)) > 100) return -1e9;
+
+  const phase = phaseOf(state);
+  const coeff = phaseCoeffs(phase);
+  const fam = familyOf(def);
+
+  // Erfolg wirkt v. a. auf Milestone-Fortschritt → p nur dort nutzen
+  const p = successProbability(state, def, def.baseDC) / 100;
+
+  const baseUtility =
+      coeff.xp    * xAdj
+    + coeff.hope  * hAdj
+    - coeff.stress* sAdj
+    - coeff.energy* def.energyCost;
+
+  const milestoneScore = coeff.milestone * (def.tags.includes("milestone-setup") ? p * 10 : 0);
+  const fit = dcFit(def.baseDC, targetDC);
+  const phaseBias = 1 + familyPhaseBias(phase, fam);
+  const riskBiasV = riskPhaseBias(phase, risk);
+  const novel = noveltyBonus(state, def);
+  const jitter = (state.rng() - 0.5) * 0.01; // minimale Streuung
+
+  // Zusammensetzen – Fit als sanfter Multiplikator, Bias multiplicativ
+  const score = (baseUtility + milestoneScore) * (0.9 + 0.2*fit) * phaseBias * riskBiasV + novel + jitter;
+  return score;
+}
+
+/* ========================================================================== */
+/*  ENGINE                                                                     */
+/* ========================================================================== */
+
 function createState(meta, stats, perks, path, seedStr){
   const rng = makeRngFromSeed(seedStr);
   return {
@@ -152,12 +253,9 @@ function createState(meta, stats, perks, path, seedStr){
   };
 }
 
-function choiceByWeights(rng, weights){
-  const total=weights.reduce((a,b)=>a+b,0); if(total<=0) return -1;
-  let t=rng()*total, cum=0; for(let i=0;i<weights.length;i++){ cum+=weights[i]; if(t<=cum) return i; }
-  return weights.length-1;
-}
+function choiceByWeights(rng, weights){ const total=weights.reduce((a,b)=>a+b,0); if(total<=0) return -1; let t=rng()*total,c=0; for(let i=0;i<weights.length;i++){ c+=weights[i]; if(t<=c) return i; } return weights.length-1; }
 
+// NEU: Advanced-Auswahl pro Risiko (argmax Utility)
 function pickOptions(state, pool){
   const risks=[Risk.Safe, Risk.Medium, Risk.Hard];
   const targets=new Map([
@@ -165,40 +263,46 @@ function pickOptions(state, pool){
     [Risk.Medium, 8 + Math.floor(state.rng()*2)],
     [Risk.Hard,  10 + Math.floor(state.rng()*2)]
   ]);
-  const out=[]; const X_NEU=5;
 
-  pool.forEach(def=>{ state.sinceSeen.set(def.id, (state.sinceSeen.get(def.id) ?? (X_NEU+1)) + 1); });
+  // Neuheit altern lassen
+  const X_NEU=5;
+  pool.forEach(def=>{
+    state.sinceSeen.set(def.id, (state.sinceSeen.get(def.id) ?? (X_NEU+1)) + 1);
+  });
 
-  for(const risk of risks){
+  const out=[];
+  for (const risk of risks){
     const target = targets.get(risk);
+    // Kandidaten filtern
     const candidates = pool.filter(def=>{
       const cd=state.cooldowns.get(def.id) ?? 0;
-      const pathOK=(def.pathRestriction===null) || (def.pathRestriction===state.path);
+      const pathOK = (def.pathRestriction===null) || (def.pathRestriction===state.path);
       return pathOK && def.prereq(state) && cd<=0;
     });
-    if(!candidates.length) continue;
+    if (!candidates.length) continue;
 
-    const weights = candidates.map(def=>{
-      const fitGrad = 1 - (Math.abs(def.baseDC - target)/5);
-      let w = Math.max(0, Math.min(1, fitGrad));
-      if (state.stress >= 70 && (def.tags.includes("rest") || def.tags.includes("aftercare"))) w *= 1.6;
-      if (state.energy <= 30 && def.energyCost >= 25) w *= 0.6;
-      if (def.tags.includes("milestone-setup")) w *= 1.25;
-      if (state.sandbox && def.tags.includes("aftercare")) w *= 1.5;
-      const age = state.sinceSeen.get(def.id) ?? (X_NEU+1);
-      w *= (age > X_NEU) ? 1.2 : 0.8;
-      return w;
-    });
-
-    const idx = choiceByWeights(state.rng, weights);
-    if(idx>=0){ const chosen=candidates[idx]; state.sinceSeen.set(chosen.id,0); out.push({def:chosen, risk, targetDC:target}); }
+    // Argmax nach Score
+    let best=null, bestScore=-1e9;
+    for (const def of candidates){
+      const s = scoreAction(state, def, target, risk);
+      if (s > bestScore){ bestScore=s; best={def, risk, targetDC:target, score:s}; }
+    }
+    if (best){
+      state.sinceSeen.set(best.def.id, 0);
+      out.push(best);
+    }
   }
 
-  // Fallback: Aftercare/Erholung
-  const ids=new Set(out.map(o=>o.def.id));
-  const prefer=["aftercare_walk","aftercare_music","aftercare_checkin","aftercare_gratitude","breath_reset","mindfulness_5"];
-  for(const id of prefer){ if(out.length>=3) break; const a=pool.find(x=>x.id===id); if(a && !ids.has(a.id)){ out.push({def:a, risk:Risk.Safe, targetDC:0}); ids.add(a.id); } }
-  return out;
+  // Falls <3, mit Aftercare auffüllen (bestbewertete)
+  if (out.length<3){
+    const ids=new Set(out.map(o=>o.def.id));
+    const fillers = pool.filter(d=>(d.tags.includes("aftercare")||d.tags.includes("rest")) && !ids.has(d.id));
+    const target = 6; // soft
+    fillers.sort((a,b)=> scoreAction(state,b,target,Risk.Safe) - scoreAction(state,a,target,Risk.Safe));
+    for (const f of fillers){ if (out.length>=3) break; out.push({def:f, risk:Risk.Safe, targetDC:target, score:scoreAction(state,f,target,Risk.Safe)}); }
+  }
+
+  return out.slice(0,3);
 }
 
 function applyPerkEconomy(perks, def, stressDelta, hopeDelta, xpGain){
@@ -211,6 +315,7 @@ function applyPerkEconomy(perks, def, stressDelta, hopeDelta, xpGain){
 
 function applyAction(state, option){
   const def=option.def;
+
   const last=state.history.slice(-20);
   const succRate = last.length ? (last.filter(x=>x).length/last.length) : 1.0;
   const safety = (succRate < 0.40) ? 1 : 0;
@@ -281,10 +386,10 @@ function buildReport(state){
   const entries=[...state.successTags.entries()].sort((a,b)=>b[1]-a[1]); const top=entries.slice(0,5).map(([k,v])=>`${k}: ${v}`).join(", ")||"–";
   const ms=state.milestonesAchieved.size ? [...state.milestonesAchieved].join(", ") : "–";
   const hints=[];
-  if(state.stress>=70) hints.push("Mehr Erholung/Aftercare (Atem-Reset, Spaziergang, Musik).");
-  if((state.successTags.get("reflect")||0)<3) hints.push("Reflexion vertiefen (Journaling, Red-Flags, Reframing).");
-  if((state.successTags.get("contact_mgmt")||0)<2) hints.push("Kontakt-Management konsistenter halten (Mute/Archive, Kein-Kontakt-Schritte).");
-  if((state.successTags.get("skills")||0)<1) hints.push("Konkrete Skills stärken (Trigger-Karte, Grenzen-Script).");
+  if(state.stress>=70) hints.push("Mehr Erholung/Aftercare (Atmen, Spaziergang, Musik).");
+  if((state.successTags.get("reflect")||0)<3) hints.push("Reflexion vertiefen (Journaling, Red Flags, Reframing).");
+  if((state.successTags.get("contact_mgmt")||0)<2) hints.push("Kontakt-Management konsistenter halten (Mute/Archive, Kein-Kontakt).");
+  if((state.successTags.get("skills")||0)<1) hints.push("Konkrete Skills stärken (Trigger-Karte, Grenzen sagen).");
   if((state.successTags.get("milestone-setup")||0)>=4) hints.push("Setup gut → Zukunftsbild/Routinen festigen.");
   return [`Erfolgsrate: ${rate}% (${succ}/${total})`,`Meilensteine: ${ms}`,`Wichtige Fortschritte: ${top}`,hints.length?`Nächste Schritte:\n• ${hints.join("\n• ")}`:"Nächste Schritte: –"].join("\n");
 }
@@ -302,7 +407,10 @@ function downloadText(filename, text){
   a.href=URL.createObjectURL(blob); a.download=filename; document.body.appendChild(a); a.click(); URL.revokeObjectURL(a.href); a.remove();
 }
 
-/* ---------- UI Binding ---------- */
+/* ========================================================================== */
+/*  UI-BINDING & STARTSCREEN                                                   */
+/* ========================================================================== */
+
 const elStart=el("start-screen");
 const elGame=el("game-screen");
 const elEnd=el("end-screen");
@@ -336,7 +444,6 @@ const elToStart=el("btn-to-start");
 
 /* ---------- Start Setup ---------- */
 const NAME_RE = /^[A-Za-zÄÖÜäöüß]{2,20}$/;
-
 const BASELINE_TOTAL = 5*5;  // 5 Attribute à 5
 const POOL_TOTAL     = 10;   // +10 Punkte verteilbar
 
@@ -353,7 +460,7 @@ const ACTIONS=makeActions();
 
 /* ---------- Health Checks ---------- */
 if(window.CH){
-  CH.loader.registerModule('game','0.10.0');
+  CH.loader.registerModule('game','0.11.0');
   try{
     CH.loader.checkDom([
       "start-screen","game-screen","end-screen","name-input","name-ok","gender-label","gender-toggle",
@@ -369,10 +476,7 @@ if(window.CH){
 
 /* ---------- Start Screen Logic ---------- */
 function sumStats(){ const s=pre.stats; return s.Selbstbild+s.Regulation+s.Klarheit+s.Grenzen+s.Zuversicht; }
-function recomputePool(){
-  const used = sumStats() - BASELINE_TOTAL;     // wie viele extra Punkte wurden schon vergeben?
-  pre.poolLeft = POOL_TOTAL - used;             // Rest im Pool (kann <0 sein → zu viel verteilt)
-}
+function recomputePool(){ const used = sumStats() - BASELINE_TOTAL; pre.poolLeft = POOL_TOTAL - used; }
 
 function validName(){ return NAME_RE.test(pre.name); }
 function validAge(){ const n = Number(elAgeInput.value); return Number.isInteger(n) && n>=10 && n<=99; }
@@ -397,11 +501,9 @@ function updateStartUI(){
   elPtsLeft.classList.toggle('ok', pre.poolLeft===0);
   elPtsLeft.classList.toggle('danger', pre.poolLeft<0);
 
-  // Name-Validierung
   elNameOk.textContent = validName() ? "✓" : "✖";
   elNameOk.className = validName() ? "ok" : "danger";
 
-  // Hinweistext
   let hint = [];
   if(!validName()) hint.push("Name (nur Buchstaben, 2–20)");
   if(!validAge())  hint.push("Alter (10–99)");
@@ -434,7 +536,7 @@ document.querySelectorAll("button[data-stat]").forEach(btn=>{
     const cur = pre.stats[stat];
     if(delta>0){
       recomputePool();
-      if(pre.poolLeft<=0) return;            // nichts mehr zu verteilen
+      if(pre.poolLeft<=0) return;
       if(cur>=10) return;
       pre.stats[stat] = Math.min(10, cur+1);
     } else {
