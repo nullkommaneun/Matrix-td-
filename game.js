@@ -1,10 +1,10 @@
 /* ============================================================================
    RESET — Spielengine & UI (game.js)  v0.14.1
-   - Attribut→E/S/H-Logik + Booster/Synergien (adjustDeltas)
+   - Attribut→E/S/H-Logik (adjustDeltas) + Booster/Synergien
    - Top-3 Vorschläge (XP-first + Safety + Diversity + Hand-Lock)
    - Narrative Log (stories.js), Story-Telemetry, CSV-Export
-   - Quickstart + Dev-Bypass für Start-Gate
-   - Kompatibler Health-Check (deltaE0→energyCost etc.), Safari-Scope-Fix
+   - Quickstart + Dev-Bypass (Name+Alter im Debug)
+   - Kompatibler Health-Check (deltaE0→legacy), Safari-Scope-Fix
    ============================================================================ */
 
 /* ===== RNG ===== */
@@ -81,9 +81,9 @@ const WEIGHTS={stabilisieren:{E:[0.05,0.35,0.05,0.00,0.10],S:[0.05,0.40,0.05,0.0
 function dot(w,a){let s=0;for(let i=0;i<w.length;i++)s+=w[i]*a[i];return s;}
 function norm(v){return (v-5)/5;}
 function applyPerkEconomy(perks,def,s,h,x){ if(perks.has(Perk.Workhorse)&&def.tags.includes("stabilize")){s=Math.trunc(s*0.85);h=Math.trunc(h*1.10);} if(perks.has(Perk.Stoic)&&s>0)s=Math.trunc(s*0.90); if(perks.has(Perk.Creative)&&def.tags.includes("growth"))x=Math.trunc(x*1.10); return[s,h,x]; }
-// Safari-Scope Fix
 try{ window.applyPerkEconomy = applyPerkEconomy; }catch{}
 
+/** passt Effekte (ΔE/ΔS/ΔH) an Attribute/State an */
 function adjustDeltas(state,def,{forScoring=false}={}){
   const fam=familyOf(def), W=WEIGHTS[fam], S=state.stats;
   const A=[norm(S.Selbstbild),norm(S.Regulation),norm(S.Klarheit),norm(S.Grenzen),norm(S.Zuversicht)];
@@ -206,10 +206,9 @@ const pre={name:"",gender:"Divers",age:18,stats:{Selbstbild:5,Regulation:5,Klarh
 function sumStats(){const s=pre.stats;return s.Selbstbild+s.Regulation+s.Klarheit+s.Grenzen+s.Zuversicht;}
 function recomputePool(){const used=sumStats()-BASELINE_TOTAL; pre.poolLeft=POOL_TOTAL-used;}
 function validName(){return NAME_RE.test(pre.name);} function validAge(){const n=Number(elAgeInput.value);return Number.isInteger(n)&&n>=10&&n<=99;}
-
-// Dev-Bypass (Debug/LocalStorage)
-function devEnabled(){ try{const qs=new URLSearchParams(location.search||""); return qs.get("debug")===""||qs.get("debug")==="1"||localStorage.getItem("reset.devstart")==="1";}catch{return false;} }
-function canStart(){ const attrsOk=Object.values(pre.stats).every(v=>v>=1&&v<=10); const normalOk=validName()&&validAge()&&attrsOk&&(pre.poolLeft===0); if (devEnabled()) return validName()&&validAge(); return normalOk; }
+// Dev-Bypass (Debug/LocalStorage + Hash)
+function devEnabled(){ try{const s=(location.search||'').toLowerCase(); const h=(location.hash||'').toLowerCase(); const re=/[?&#]debug(?:=(1|true))?(?:[&#]|$)/i; return re.test(s)||re.test(h)||localStorage.getItem("reset.devstart")==="1";}catch{return false;} }
+function canStart(){ const attrsOk=Object.values(pre.stats).every(v=>v>=1&&v<=10); const normalOk=validName()&&validAge()&&attrsOk&&(pre.poolLeft===0); return devEnabled()? (validName()&&validAge()) : normalOk; }
 
 function updateStartUI(){
   elName.value=pre.name; elGender.textContent=pre.gender; elAgeInput.value=pre.age;
@@ -221,26 +220,15 @@ function updateStartUI(){
 }
 function toStart(){pre.name="";pre.gender="Divers";pre.age=18;pre.stats={Selbstbild:5,Regulation:5,Klarheit:5,Grenzen:5,Zuversicht:5};pre.poolLeft=POOL_TOTAL;elSeedInput.value="";updateStartUI();elStart.classList.remove("hidden");elGame.classList.add("hidden");setHTML(elLog,"");document.body.classList.remove("focus");resetTelemetry();}
 
-// Quickstart (füllt Auto-Werte)
-function quickStart(){
-  if(!pre.name || !validName()) pre.name="Tom";
-  const order=["Regulation","Klarheit","Grenzen","Zuversicht","Selbstbild"];
-  for(const k of order){ pre.stats[k]=Math.min(10, pre.stats[k]+2); }
-  pre.poolLeft=0;
-  elSeedInput.value=String(Date.now());
-  updateStartUI();
-  startGame();
-}
+function quickStart(){ if(!pre.name||!validName()) pre.name="Tom"; ["Regulation","Klarheit","Grenzen","Zuversicht","Selbstbild"].forEach(k=>pre.stats[k]=Math.min(10,pre.stats[k]+2)); pre.poolLeft=0; elSeedInput.value=String(Date.now()); updateStartUI(); startGame(); }
 
 // Binder
-document.querySelectorAll("button[data-stat]").forEach(btn=>{
-  on(btn,"click",()=>{const s=btn.getAttribute("data-stat"),d=parseInt(btn.getAttribute("data-delta"),10),cur=pre.stats[s]; if(d>0){recomputePool(); if(pre.poolLeft<=0||cur>=10)return; pre.stats[s]=Math.min(10,cur+1);} else {if(cur<=1)return; pre.stats[s]=Math.max(1,cur-1);} updateStartUI();});
-});
+document.querySelectorAll("button[data-stat]").forEach(btn=>{on(btn,"click",()=>{const s=btn.getAttribute("data-stat"),d=parseInt(btn.getAttribute("data-delta"),10),cur=pre.stats[s]; if(d>0){recomputePool(); if(pre.poolLeft<=0||cur>=10)return; pre.stats[s]=Math.min(10,cur+1);} else {if(cur<=1)return; pre.stats[s]=Math.max(1,cur-1);} updateStartUI();});});
 on(elName,"input",()=>{pre.name=(elName.value||"").trim();updateStartUI();});
 on(elGenderToggle,"click",()=>{pre.gender=pre.gender==="Männlich"?"Weiblich":(pre.gender==="Weiblich"?"Divers":"Männlich");updateStartUI();});
 on(elAgeInput,"input",()=>{const n=Number(elAgeInput.value);pre.age=Number.isFinite(n)?n:pre.age;updateStartUI();});
 on(elSeedDice,"click",()=>{elSeedInput.value=String(Date.now());});
-if(elQuick) on(elQuick,"click",quickStart);
+const elQuick=document.getElementById("quickstart-btn"); if(elQuick) on(elQuick,"click",quickStart);
 
 /* ===== Daten laden & Health-Check (kompatibel) ===== */
 const ACTIONS=actionsFromCards(window.RESET_CARDS||{});
@@ -296,7 +284,6 @@ function startGame(){
   const seed=(elSeedInput.value||(`${pre.name}#${pre.age}`)).trim();
   GAME=createState({name:pre.name,gender:pre.gender,age:pre.age,background:"Neutral"},{...pre.stats},new Set(),Path.Aufarbeitung,seed);
 
-  // Hinweise, falls Content fehlt
   if(!window.RESET_CARDS || !ACTIONS || !ACTIONS.length){
     setHTML(document.getElementById("options"), `<div class="muted">Keine Karten geladen. Prüfe, ob <code>cards.js</code> vor <code>game.js</code> eingebunden ist.</div>`);
   }
@@ -322,7 +309,6 @@ on(elDebugOpen,"click",()=>{ if(window.CH&&CH.ui) CH.ui.open(); renderTelemetry(
 /* ===== Endscreen (kurz) ===== */
 function endGame(state,title,summary){ state.ended=true; state.endTitle=title; state.endSummary=summary; }
 function showEnd(){
-  // Minimal: zurück zum Start, damit du weiter testen kannst
   const rep=document.getElementById('end-report');
   if(rep) rep.textContent = 'Run beendet.';
   document.getElementById('game-screen').classList.add('hidden');

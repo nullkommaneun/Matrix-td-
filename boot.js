@@ -1,21 +1,25 @@
 /* ============================================================================
-   RESET — Boot/Diagnostics/Loader (boot.js)  v0.10.0
-   - Globales CH-Namespace: config, logger, loader, diagnostics, ui
-   - Global-Error-Capture + Maschinencode (MDC)
-   - Unverändert robust, nur Version angehoben
+   RESET — Boot/Diagnostics/Loader (boot.js)  v0.10.1
    ============================================================================ */
 (function (global) {
   'use strict';
 
   const CH = global.CH = global.CH || {};
-  CH.VERSION = '0.10.0';
+  CH.VERSION = '0.10.1';
   CH.BUILD = '2025-08-24';
 
+  // robustes Debug-Flag (Query + Hash, case-insensitive) + localStorage
   (function setDebugFlag(){
-    const qs = new URLSearchParams(global.location.search || '');
-    const qv = qs.has('debug') ? (qs.get('debug') ?? '') : null;
-    const on = (qv === '' || qv === '1' || (qv+'').toLowerCase() === 'true');
-    CH.config = { debug: on || localStorage.getItem('ch.debug') === '1' };
+    function hasFlag(name) {
+      const s = (global.location.search || '').toLowerCase();
+      const h = (global.location.hash   || '').toLowerCase();
+      const re = new RegExp(`[?&#]${name.toLowerCase()}(?:=(1|true))?(?:[&#]|$)`, 'i');
+      return re.test(s) || re.test(h);
+    }
+    const on = hasFlag('debug') ||
+               localStorage.getItem('ch.debug') === '1' ||
+               localStorage.getItem('reset.devstart') === '1';
+    CH.config = { debug: !!on };
   })();
 
   const Utils = CH.utils = {
