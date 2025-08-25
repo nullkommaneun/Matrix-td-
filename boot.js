@@ -8,7 +8,6 @@
   CH.VERSION = '0.10.1';
   CH.BUILD = '2025-08-24';
 
-  // robustes Debug-Flag (Query + Hash, case-insensitive) + localStorage
   (function setDebugFlag(){
     function hasFlag(name) {
       const s = (global.location.search || '').toLowerCase();
@@ -62,7 +61,7 @@
         this.assert(`Action:${a.id}:id`, typeof a.id==='string' && a.id);
         this.assert(`Action:${a.id}:unique`, !ids.has(a.id)); ids.add(a.id);
         this.assert(`Action:${a.id}:stat`, !!validStats[a.stat]);
-        ['baseDC','energyCost','stressDelta','moneyDelta','xpGain'].forEach(key=>this.assert(`Action:${a.id}:${key}`, Utils.isNumber(a[key])));
+        ['baseDC','energyCost','stressDelta','moneyDelta','xpGain'].forEach(key=>this.assert(`Action:${a.id}:${key}`, CH.utils.isNumber(a[key])));
       });
     },
     registerModule(name,version){ this.health.modules.push({name,version}); }

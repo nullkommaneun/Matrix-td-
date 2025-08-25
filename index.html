@@ -211,22 +211,33 @@
 <script src="stories.js" defer></script>
 <script src="game.js" defer></script>
 
-<!-- Preflight, falls boot.js fehlt -->
+<!-- Robustes Preflight: zeig Overlay NUR, wenn boot.js NICHT initialisiert -->
 <script>
-  window.addEventListener('DOMContentLoaded', function(){
-    setTimeout(function(){
-      if (!window.CH || !window.CH.ui) {
-        var w = document.createElement('div');
-        w.style.cssText='position:fixed;inset:0;background:rgba(10,13,10,.92);z-index:99998;padding:16px';
-        w.innerHTML = '<div class="panel" style="max-width:900px;margin:10vh auto">'+
-          '<h3>Hinweis: Debug/Diagnostics nicht geladen</h3><div class="sep"></div>'+
-          '<p class="muted">Prüfe die Einbindereihenfolge: boot.js → cards.js → stories.js → game.js</p>'+
-          '<div style="margin-top:8px"><button id="__pf_close" class="primary">OK</button></div></div>';
-        document.body.appendChild(w);
-        w.querySelector('#__pf_close').onclick=function(){ w.remove(); };
-      }
-    }, 0);
-  });
+(function(){
+  function showOverlay(){
+    if (document.getElementById('__pf_overlay')) return;
+    var w = document.createElement('div');
+    w.id = '__pf_overlay';
+    w.style.cssText='position:fixed;inset:0;background:rgba(10,13,10,.92);z-index:99998;padding:16px';
+    w.innerHTML = '<div class="panel" style="max-width:900px;margin:10vh auto">'+
+      '<h3>Hinweis: Debug/Diagnostics nicht geladen</h3><div class="sep"></div>'+
+      '<p class="muted">Prüfe die Einbindereihenfolge: <code>boot.js → cards.js → stories.js → game.js</code>.</p>'+
+      '<div style="margin-top:8px"><button id="__pf_close" class="primary">OK</button></div></div>';
+    document.body.appendChild(w);
+    document.getElementById('__pf_close').onclick=function(){ w.remove(); };
+  }
+  function checkReady(startTs){
+    // CH.ui ist nach boot.js verfügbar; warte bis zu 2000ms
+    if (window.CH && CH.ui && typeof CH.ui.open === 'function') return;
+    if (Date.now() - startTs > 2000) { showOverlay(); return; }
+    setTimeout(function(){ checkReady(startTs); }, 200);
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function(){ checkReady(Date.now()); }, {once:true});
+  } else {
+    checkReady(Date.now());
+  }
+})();
 </script>
 </body>
 </html>
