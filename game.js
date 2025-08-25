@@ -1,9 +1,10 @@
 /* ============================================================================
    RESET — Spielengine & UI (game.js)  v0.14.1
-   Fixes:
-   - Kompatibler Health-Check (mapping deltaE0/deltaS0/deltaH0 → legacy Felder)
-   - applyPerkEconomy sicher global gebunden (Safari-Scope)
-   - defensives Rendering (Top3) mit Fallback-Message
+   - Attribut→E/S/H-Logik + Booster/Synergien (adjustDeltas)
+   - Top-3 Vorschläge (XP-first + Safety + Diversity + Hand-Lock)
+   - Narrative Log (stories.js), Story-Telemetry, CSV-Export
+   - Quickstart + Dev-Bypass für Start-Gate
+   - Kompatibler Health-Check (deltaE0→energyCost etc.), Safari-Scope-Fix
    ============================================================================ */
 
 /* ===== RNG ===== */
@@ -80,8 +81,8 @@ const WEIGHTS={stabilisieren:{E:[0.05,0.35,0.05,0.00,0.10],S:[0.05,0.40,0.05,0.0
 function dot(w,a){let s=0;for(let i=0;i<w.length;i++)s+=w[i]*a[i];return s;}
 function norm(v){return (v-5)/5;}
 function applyPerkEconomy(perks,def,s,h,x){ if(perks.has(Perk.Workhorse)&&def.tags.includes("stabilize")){s=Math.trunc(s*0.85);h=Math.trunc(h*1.10);} if(perks.has(Perk.Stoic)&&s>0)s=Math.trunc(s*0.90); if(perks.has(Perk.Creative)&&def.tags.includes("growth"))x=Math.trunc(x*1.10); return[s,h,x]; }
-// **Safari-Scope-Fix (sicherstellen, dass die Funktion global auf window liegt)**
-try{ window.applyPerkEconomy = applyPerkEconomy; }catch{ /* ignore */ }
+// Safari-Scope Fix
+try{ window.applyPerkEconomy = applyPerkEconomy; }catch{}
 
 function adjustDeltas(state,def,{forScoring=false}={}){
   const fam=familyOf(def), W=WEIGHTS[fam], S=state.stats;
@@ -112,8 +113,7 @@ function noveltyBonus(state,def){const age=state.sinceSeen.get(def.id)??0;return
 function isUnsafeAfter(state,dE,dS){const eAfter=state.energy+dE,sAfter=state.stress+Math.max(0,dS);return (eAfter<0)||(sAfter>100);}
 
 function scoreBreakdown(state,def){
-  const phase=phaseOf(state), w=weightsForPhase(phase);
-  const p=successProbability(state,def,def.baseDC)/100;
+  const phase=phaseOf(state), w=weightsForPhase(phase), p=successProbability(state,def,def.baseDC)/100;
   const adj=adjustDeltas(state,def,{forScoring:true});
   if(isUnsafeAfter(state,adj.dE,adj.dS)) return {unsafe:true,score:-1e9,phase,fam:familyOf(def)};
   const XPexp=p*adj.xAdj, MS=def.tags.includes("milestone-setup")?p*10:0;
@@ -177,8 +177,8 @@ function applyAction(state,{def}){
   state.history.push(success); if(state.history.length>50)state.history.shift();
 
   const prob=successProbability(state,def,def.baseDC);
-  const tech=`Aktion: ${def.name}. DC=${def.baseDC}, Erfolg≈${prob}% · W10=${roll}, Luck+${ls}, Margin ${margin}; Δ: E ${signStr(adj.dE)}, S ${signStr(adj.dS)}, H ${signStr(adj.dH)}, XP +${adj.xAdj}.`;
-  if(window.CH){CH.logger.info(`Aktion ${def.id} → ${success?'Erfolg':'Near'}`,{prob,margin});}
+  const tech=`Aktion: ${def.name}. DC=${def.baseDC}, Erfolg≈${prob}% · W10=${roll}, Δ: E ${signStr(adj.dE)}, S ${signStr(adj.dS)}, H ${signStr(adj.dH)}, XP +${adj.xAdj}.`;
+  if(window.CH){CH.logger.info(`Aktion ${def.id} → ${success?'Erfolg':'Near'}`,{prob});}
   return {success,margin,tech,deltas:{E:adj.dE,S:adj.dS,H:adj.dH},def};
 }
 
@@ -191,40 +191,64 @@ function addTelemetry(state,def,res){const fam=storyFamily(def), tone=getTone(),
 function renderTelemetry(){const box=document.getElementById('debug-telemetry'); if(!box)return; const rate=TELE.tries?Math.round(100*TELE.success/TELE.tries):0; const famLines=Object.entries(TELE.byFam).map(([k,v])=>`• ${k}: ${v}`).join("\n"); const tops=[...TELE.topCards.entries()].sort((a,b)=>b[1]-a[1]).slice(0,5).map(([n,c])=>`• ${n} ×${c}`).join("\n")||"–"; box.textContent=`Story-Telemetry\nErfolg: ${rate}% (${TELE.success}/${TELE.tries})\nXP ca.: ${TELE.xp}\nFamilien:\n${famLines}\n\nTop-Karten:\n${tops}`;}
 function downloadCSV(){const blob=new Blob([CSV_ROWS.join("\n")],{type:"text/csv;charset=utf-8"});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`reset_run_${Date.now()}.csv`;document.body.appendChild(a);a.click();URL.revokeObjectURL(a.href);a.remove();}
 
-/* ===== UI Elements & Start ===== */
+/* ===== UI Elements ===== */
 const elStart=el("start-screen"), elGame=el("game-screen");
 const elName=el("name-input"), elNameOk=el("name-ok"), elGender=el("gender-label"), elGenderToggle=el("gender-toggle");
 const elAgeInput=el("age-input"), elSeedInput=el("seed-input"), elSeedDice=el("seed-dice"), elConfirm=el("confirm-btn");
+const elQuick=document.getElementById("quickstart-btn");
 const elPtsLeft=el("pts-left"), elHint=el("start-hint");
 const elOptions=el("options"), elLog=el("log"), elStatus=el("status"), elCooldowns=el("cooldowns");
 const elRefresh=el("btn-refresh"), elExit=el("btn-exit"), elRestart=el("btn-restart"), elFocus=el("btn-focus"), elDebugOpen=el("btn-debug");
 
+/* ===== Start-Screen ===== */
 const NAME_RE=/^[A-Za-zÄÖÜäöüß]{2,20}$/; const BASELINE_TOTAL=25; const POOL_TOTAL=10;
 const pre={name:"",gender:"Divers",age:18,stats:{Selbstbild:5,Regulation:5,Klarheit:5,Grenzen:5,Zuversicht:5},poolLeft:POOL_TOTAL};
 function sumStats(){const s=pre.stats;return s.Selbstbild+s.Regulation+s.Klarheit+s.Grenzen+s.Zuversicht;}
 function recomputePool(){const used=sumStats()-BASELINE_TOTAL; pre.poolLeft=POOL_TOTAL-used;}
 function validName(){return NAME_RE.test(pre.name);} function validAge(){const n=Number(elAgeInput.value);return Number.isInteger(n)&&n>=10&&n<=99;}
-function canStart(){const ok=Object.values(pre.stats).every(v=>v>=1&&v<=10);return validName()&&validAge()&&ok&&pre.poolLeft===0;}
-function updateStartUI(){elName.value=pre.name; elGender.textContent=pre.gender; elAgeInput.value=pre.age; el("stat-Selbstbild").textContent=pre.stats.Selbstbild; el("stat-Regulation").textContent=pre.stats.Regulation; el("stat-Klarheit").textContent=pre.stats.Klarheit; el("stat-Grenzen").textContent=pre.stats.Grenzen; el("stat-Zuversicht").textContent=pre.stats.Zuversicht; recomputePool(); elPtsLeft.textContent=pre.poolLeft; elPtsLeft.classList.toggle('ok',pre.poolLeft===0); elPtsLeft.classList.toggle('danger',pre.poolLeft<0); elNameOk.textContent=validName()?"✓":"✖"; elNameOk.className=validName()?"ok":"danger"; const miss=[]; if(!validName())miss.push("Name"); if(!validAge())miss.push("Alter"); if(pre.poolLeft!==0)miss.push(`${Math.abs(pre.poolLeft)} Punkt(e) ${pre.poolLeft>0?'zu verteilen':'zu viel'}`); elHint.textContent=miss.length?("Fehlt: "+miss.join(" · ")):"Alles bereit."; elConfirm.disabled=!canStart();}
-function toStart(){pre.name="";pre.gender="Divers";pre.age=18;pre.stats={Selbstbild:5,Regulation:5,Klarheit:5,Grenzen:5,Zuversicht:5};pre.poolLeft=POOL_TOTAL;elSeedInput.value="";updateStartUI();elStart.classList.remove("hidden");elGame.classList.add("hidden");setHTML(elLog,"");document.body.classList.remove("focus");if(elFocus)elFocus.textContent="FOKUS: AUS";resetTelemetry();if(window.CH)CH.logger.info('Zurück zum Start.');}
-document.querySelectorAll("button[data-stat]").forEach(btn=>{on(btn,"click",()=>{const s=btn.getAttribute("data-stat"),d=parseInt(btn.getAttribute("data-delta"),10),cur=pre.stats[s]; if(d>0){recomputePool(); if(pre.poolLeft<=0||cur>=10)return; pre.stats[s]=Math.min(10,cur+1);} else {if(cur<=1)return; pre.stats[s]=Math.max(1,cur-1);} updateStartUI();});});
+
+// Dev-Bypass (Debug/LocalStorage)
+function devEnabled(){ try{const qs=new URLSearchParams(location.search||""); return qs.get("debug")===""||qs.get("debug")==="1"||localStorage.getItem("reset.devstart")==="1";}catch{return false;} }
+function canStart(){ const attrsOk=Object.values(pre.stats).every(v=>v>=1&&v<=10); const normalOk=validName()&&validAge()&&attrsOk&&(pre.poolLeft===0); if (devEnabled()) return validName()&&validAge(); return normalOk; }
+
+function updateStartUI(){
+  elName.value=pre.name; elGender.textContent=pre.gender; elAgeInput.value=pre.age;
+  el("stat-Selbstbild").textContent=pre.stats.Selbstbild; el("stat-Regulation").textContent=pre.stats.Regulation; el("stat-Klarheit").textContent=pre.stats.Klarheit; el("stat-Grenzen").textContent=pre.stats.Grenzen; el("stat-Zuversicht").textContent=pre.stats.Zuversicht;
+  recomputePool(); elPtsLeft.textContent=pre.poolLeft; elPtsLeft.classList.toggle('ok',pre.poolLeft===0); elPtsLeft.classList.toggle('danger',pre.poolLeft<0);
+  elNameOk.textContent=validName()?"✓":"✖"; elNameOk.className=validName()?"ok":"danger";
+  const miss=[]; if(!validName())miss.push("Name"); if(!validAge())miss.push("Alter"); if(pre.poolLeft!==0)miss.push(`${Math.abs(pre.poolLeft)} Punkt(e) ${pre.poolLeft>0?'zu verteilen':'zu viel'}`);
+  elHint.textContent=miss.length?("Fehlt: "+miss.join(" · ")):"Alles bereit."; elConfirm.disabled=!canStart();
+}
+function toStart(){pre.name="";pre.gender="Divers";pre.age=18;pre.stats={Selbstbild:5,Regulation:5,Klarheit:5,Grenzen:5,Zuversicht:5};pre.poolLeft=POOL_TOTAL;elSeedInput.value="";updateStartUI();elStart.classList.remove("hidden");elGame.classList.add("hidden");setHTML(elLog,"");document.body.classList.remove("focus");resetTelemetry();}
+
+// Quickstart (füllt Auto-Werte)
+function quickStart(){
+  if(!pre.name || !validName()) pre.name="Tom";
+  const order=["Regulation","Klarheit","Grenzen","Zuversicht","Selbstbild"];
+  for(const k of order){ pre.stats[k]=Math.min(10, pre.stats[k]+2); }
+  pre.poolLeft=0;
+  elSeedInput.value=String(Date.now());
+  updateStartUI();
+  startGame();
+}
+
+// Binder
+document.querySelectorAll("button[data-stat]").forEach(btn=>{
+  on(btn,"click",()=>{const s=btn.getAttribute("data-stat"),d=parseInt(btn.getAttribute("data-delta"),10),cur=pre.stats[s]; if(d>0){recomputePool(); if(pre.poolLeft<=0||cur>=10)return; pre.stats[s]=Math.min(10,cur+1);} else {if(cur<=1)return; pre.stats[s]=Math.max(1,cur-1);} updateStartUI();});
+});
 on(elName,"input",()=>{pre.name=(elName.value||"").trim();updateStartUI();});
 on(elGenderToggle,"click",()=>{pre.gender=pre.gender==="Männlich"?"Weiblich":(pre.gender==="Weiblich"?"Divers":"Männlich");updateStartUI();});
 on(elAgeInput,"input",()=>{const n=Number(elAgeInput.value);pre.age=Number.isFinite(n)?n:pre.age;updateStartUI();});
 on(elSeedDice,"click",()=>{elSeedInput.value=String(Date.now());});
+if(elQuick) on(elQuick,"click",quickStart);
 
 /* ===== Daten laden & Health-Check (kompatibel) ===== */
 const ACTIONS=actionsFromCards(window.RESET_CARDS||{});
 if(window.CH){
   try{
     validateCards(ACTIONS);
-    // Kompatibilitäts-Mapping für alten Loader-Check:
-    const compat = ACTIONS.map(a=>({
-      id:a.id, stat:a.stat, baseDC:a.baseDC,
-      energyCost: -a.deltaE0,                    // deltaE0>0 = Energiegewinn → alte Semantik: Kosten negativ
-      stressDelta: a.deltaS0, moneyDelta: a.deltaH0, xpGain: a.xpGain
-    }));
-    CH.loader.checkActions(compat, Stat);
+    const compat=ACTIONS.map(a=>({id:a.id,stat:a.stat,baseDC:a.baseDC,energyCost:-a.deltaE0,stressDelta:a.deltaS0,moneyDelta:a.deltaH0,xpGain:a.xpGain}));
+    CH.loader.checkActions(compat,Stat);
   }catch(e){ CH.diagnostics.recordError(e,'cards-validate'); }
 }
 
@@ -262,7 +286,7 @@ function renderTop3(){
     elOptions.innerHTML=""; top.forEach(o=>elOptions.appendChild(interactiveCard(o))); CURRENT_HAND=top.map(o=>o.def.id);
   }catch(e){
     if(window.CH) CH.diagnostics.recordError(e,'renderTop3');
-    elOptions.innerHTML = `<div class="muted">Karten konnten nicht berechnet werden. Bitte Debug öffnen.</div>`;
+    elOptions.innerHTML = `<div class="muted">Karten konnten nicht berechnet werden. Prüfe Einbindereihenfolge (cards.js, stories.js).</div>`;
   }
 }
 
@@ -271,6 +295,15 @@ let GAME=null;
 function startGame(){
   const seed=(elSeedInput.value||(`${pre.name}#${pre.age}`)).trim();
   GAME=createState({name:pre.name,gender:pre.gender,age:pre.age,background:"Neutral"},{...pre.stats},new Set(),Path.Aufarbeitung,seed);
+
+  // Hinweise, falls Content fehlt
+  if(!window.RESET_CARDS || !ACTIONS || !ACTIONS.length){
+    setHTML(document.getElementById("options"), `<div class="muted">Keine Karten geladen. Prüfe, ob <code>cards.js</code> vor <code>game.js</code> eingebunden ist.</div>`);
+  }
+  if(!window.RESET_STORIES){
+    const warn=document.createElement('div'); warn.className='danger'; warn.textContent='stories.js fehlt – Log zeigt nur Text ohne Mini-Stories.'; document.getElementById('log').prepend(warn);
+  }
+
   resetTelemetry();
   if(window.CH){ CH.diagnostics.setStateSupplier(()=>({seed:GAME.seed,meta:GAME.meta,resources:{energy:GAME.energy,stress:GAME.stress,hope:GAME.money,xp:GAME.xp},ended:GAME.ended})); }
   elStart.classList.add("hidden"); elGame.classList.remove("hidden");
@@ -284,7 +317,14 @@ on(elRefresh,"click",()=>renderTop3());
 on(elExit,"click",()=>{ endGame(GAME,"Freiwilliger Abschluss",""); showEnd(); });
 on(elRestart,"click",()=>toStart());
 on(elFocus,"click",()=>{ document.body.classList.toggle("focus"); if(GAME) renderTop3(); });
+on(elDebugOpen,"click",()=>{ if(window.CH&&CH.ui) CH.ui.open(); renderTelemetry(); });
 
-/* ===== Endscreen helpers (gekürzt) ===== */
+/* ===== Endscreen (kurz) ===== */
 function endGame(state,title,summary){ state.ended=true; state.endTitle=title; state.endSummary=summary; }
-function showEnd(){ /* … wie zuvor … */ }
+function showEnd(){
+  // Minimal: zurück zum Start, damit du weiter testen kannst
+  const rep=document.getElementById('end-report');
+  if(rep) rep.textContent = 'Run beendet.';
+  document.getElementById('game-screen').classList.add('hidden');
+  document.getElementById('end-screen').classList.remove('hidden');
+}

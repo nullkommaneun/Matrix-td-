@@ -94,8 +94,10 @@
       </div>
     </div>
 
-    <div style="margin-top:10px;">
+    <!-- Start + Schnellstart -->
+    <div style="margin-top:10px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
       <button id="confirm-btn" class="primary" disabled>Start</button>
+      <button id="quickstart-btn" title="Debug/Schnellstart (füllt automatisch)">Schnellstart</button>
       <span id="start-hint" class="muted">Verteile alle Punkte & fülle Profil aus.</span>
     </div>
 
@@ -218,7 +220,7 @@
         w.style.cssText='position:fixed;inset:0;background:rgba(10,13,10,.92);z-index:99998;padding:16px';
         w.innerHTML = '<div class="panel" style="max-width:900px;margin:10vh auto">'+
           '<h3>Hinweis: Debug/Diagnostics nicht geladen</h3><div class="sep"></div>'+
-          '<p class="muted">Die Datei <code>boot.js</code> wurde nicht gefunden oder blockiert.</p>'+
+          '<p class="muted">Prüfe die Einbindereihenfolge: boot.js → cards.js → stories.js → game.js</p>'+
           '<div style="margin-top:8px"><button id="__pf_close" class="primary">OK</button></div></div>';
         document.body.appendChild(w);
         w.querySelector('#__pf_close').onclick=function(){ w.remove(); };
